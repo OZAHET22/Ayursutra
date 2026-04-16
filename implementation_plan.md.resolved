@@ -1,0 +1,127 @@
+# Backend Integration Plan — Node.js + MongoDB
+
+## Overview
+Build a full REST API backend using **Node.js + Express + MongoDB (Mongoose)** and connect it to the existing React frontend. The demo mock data will be replaced by real API calls.
+
+---
+
+## Backend Folder Structure
+
+```
+chatgpt react/
+├── ayursutra-react/          ← existing React frontend
+└── ayursutra-backend/        ← NEW Node.js backend
+    ├── server.js
+    ├── .env
+    ├── package.json
+    ├── config/
+    │   └── db.js             ← MongoDB connection
+    ├── middleware/
+    │   ├── auth.js           ← JWT verify middleware
+    │   └── errorHandler.js
+    ├── models/
+    │   ├── User.js           ← Patient / Doctor / Admin
+    │   ├── Appointment.js
+    │   ├── Therapy.js
+    │   ├── Invoice.js
+    │   └── Feedback.js
+    └── routes/
+        ├── auth.js           ← /api/auth
+        ├── users.js          ← /api/users
+        ├── appointments.js   ← /api/appointments
+        ├── therapies.js      ← /api/therapies
+        ├── invoices.js       ← /api/invoices
+        └── feedback.js       ← /api/feedback
+```
+
+---
+
+## API Endpoints
+
+### Auth — `/api/auth`
+| Method | Route | Description |
+|---|---|---|
+| POST | `/register` | Register patient / doctor / admin |
+| POST | `/login` | Login → returns JWT token |
+| GET | `/me` | Get current user (token required) |
+
+### Users — `/api/users`
+| Method | Route | Description |
+|---|---|---|
+| GET | `/patients` | List all patients (admin/doctor) |
+| GET | `/doctors` | List all doctors |
+| PUT | [/:id](file:///c:/Users/het22/Downloads/chatgpt%20react/ayursutra-react/src/context/AuthContext.jsx#22-57) | Update user profile |
+| DELETE | [/:id](file:///c:/Users/het22/Downloads/chatgpt%20react/ayursutra-react/src/context/AuthContext.jsx#22-57) | Delete user (admin) |
+
+### Appointments — `/api/appointments`
+| Method | Route | Description |
+|---|---|---|
+| GET | `/` | Get appointments (filtered by role) |
+| POST | `/` | Book appointment |
+| PUT | [/:id](file:///c:/Users/het22/Downloads/chatgpt%20react/ayursutra-react/src/context/AuthContext.jsx#22-57) | Update / reschedule |
+| DELETE | [/:id](file:///c:/Users/het22/Downloads/chatgpt%20react/ayursutra-react/src/context/AuthContext.jsx#22-57) | Cancel |
+
+### Therapies — `/api/therapies`
+| Method | Route | Description |
+|---|---|---|
+| GET | `/` | Get therapies |
+| POST | `/` | Add therapy |
+| PUT | [/:id](file:///c:/Users/het22/Downloads/chatgpt%20react/ayursutra-react/src/context/AuthContext.jsx#22-57) | Update therapy |
+
+### Invoices — `/api/invoices`
+| Method | Route | Description |
+|---|---|---|
+| GET | `/` | Get invoices (doctor's own) |
+| POST | `/` | Create invoice |
+| PUT | [/:id](file:///c:/Users/het22/Downloads/chatgpt%20react/ayursutra-react/src/context/AuthContext.jsx#22-57) | Update invoice |
+| DELETE | [/:id](file:///c:/Users/het22/Downloads/chatgpt%20react/ayursutra-react/src/context/AuthContext.jsx#22-57) | Delete invoice |
+
+### Feedback — `/api/feedback`
+| Method | Route | Description |
+|---|---|---|
+| GET | `/` | Get feedback |
+| POST | `/` | Submit feedback |
+| PUT | `/:id/reply` | Doctor reply to feedback |
+
+---
+
+## MongoDB Models
+
+- **User**: `name, email, password (bcrypt), role (patient/doctor/admin), centre, speciality, phone, address`
+- **Appointment**: `patientId, doctorId, type, date, duration, status, notes, centre`
+- **Therapy**: `name, patientId, doctorId, sessions, completed, progress, startDate, endDate, status`
+- **Invoice**: `invoiceNo, clinicName, patient, doctor, items[], subtotal, taxTotal, grandTotal, paymentStatus, paidAmount, signatureData, stampData, notes, isDraft`
+- **Feedback**: `patientId, doctorId, content, rating, reply, date`
+
+---
+
+## Frontend Changes
+Replace [mockData.js](file:///c:/Users/het22/Downloads/chatgpt%20react/ayursutra-react/src/data/mockData.js) usage with an **API service layer**:
+
+- **`src/services/api.js`** — Axios instance with base URL + JWT interceptor
+- **`src/services/authService.js`** — login, register, getMe
+- **`src/services/appointmentService.js`**
+- **`src/services/invoiceService.js`**
+- **`src/services/feedbackService.js`**
+
+[AuthContext.jsx](file:///c:/Users/het22/Downloads/chatgpt%20react/ayursutra-react/src/context/AuthContext.jsx) will be updated to call the real API instead of local DEMO_USERS array.
+
+---
+
+## Tech Stack
+| Layer | Technology |
+|---|---|
+| Backend | Node.js, Express.js |
+| Database | MongoDB with Mongoose ODM |
+| Auth | JWT (jsonwebtoken) + bcryptjs |
+| CORS | cors middleware |
+| Frontend HTTP | Axios |
+
+---
+
+## Verification Plan
+1. Start MongoDB locally (or MongoDB Atlas connection)
+2. Start backend: `npm start` in `ayursutra-backend/`
+3. Test login API with Postman/browser
+4. Confirm React frontend login works via real API
+5. Test CRUD for appointments, invoices, feedback

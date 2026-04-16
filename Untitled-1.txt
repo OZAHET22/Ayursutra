@@ -1,0 +1,263 @@
+==============================================================
+   AYURSUTRA — DOCTOR DASHBOARD
+   HOW 5 FEATURES WORK (FULL TECHNICAL EXPLANATION)
+   Date: 10 April 2026
+==============================================================
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. APPOINTMENTS TAB
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+FILE: ayursutra-react/src/pages/doctor/AppointmentsTab.jsx
+
+WHAT IT DOES:
+  Doctor can view, create, confirm, complete, and cancel appointments.
+
+HOW IT WORKS:
+
+  [1] Page Load:
+      → useEffect() fires → loadData()
+      → Calls 2 APIs at the same time (Promise.all):
+          • GET /api/appointments   → only THIS doctor's appointments
+                                      (backend filters by doctorId from JWT token)
+          • GET /api/users/patients → all patients (for dropdown in form)
+      → Data saved in: appointments[], patients[]
+      → Auto-refreshes every 10 seconds (setInterval)
+
+  [2] Stats Cards (shown at top):
+      → Total:     appointments.length
+      → Today:     appointments where date == today
+      → Pending:   appointments where status == 'pending'
+      → Confirmed: appointments where status == 'confirmed'
+
+  [3] Filter Buttons (client-side using useMemo):
+      → All      → shows everything
+      → Today    → date matches today's date
+      → Upcoming → date is in future + not completed
+      → Pending  → status === 'pending'
+      → Confirmed→ status === 'confirmed'
+      → Search box filters by patientName or therapy type
+
+  [4] Creating a New Appointment:
+      → Doctor fills: Patient | Type | Date & Time | Duration | Notes
+      → Clicks "Save Appointment"
+      → POST /api/appointments
+      → BACKEND does:
+            • Checks for TIME CONFLICT on same doctorId
+              (if conflict → returns 409 error with clash details)
+            • If no conflict → saves to MongoDB
+            • Auto-attaches 4-item checklist to appointment
+            • Attaches pre/post care text based on therapy type
+            • Sends instant Socket.io notification to patient:
+              "Appointment Scheduled: Panchakarma on 12 Apr..."
+      → Frontend shows success toast and reloads list
+
+  [5] Changing Status:
+      → Confirm  button → PUT /api/appointments/:id { status: 'confirmed' }
+      → Complete button → PUT /api/appointments/:id { status: 'completed' }
+      → Cancel   button → PUT /api/appointments/:id { status: 'cancelled' }
+      → Backend saves + sends Socket.io notification to patient
+      → loadData() called → list refreshes
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+2. SCHEDULE TAB
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+FILE: ayursutra-react/src/pages/doctor/ScheduleTab.jsx
+
+WHAT IT DOES:
+  Visual calendar of all appointments.
+  3 view modes: Day / Week / Month.
+  Doctor can drag (click-to-move) appointments to a new time slot.
+
+HOW IT WORKS:
+
+  [1] Page Load:
+      → GET /api/appointments (same as Appointments tab)
+      → Auto-refreshes every 20 seconds
+
+  [2] Day View:
+      → Shows hours 8AM to 7PM as rows (HOURS array)
+      → Each row shows appointments for that hour
+      → Empty slots highlighted in green if "moving mode" is active
+
+  [3] Week View:
+      → 7-column grid (Sun–Sat) x hour rows
+      → Today's column highlighted in green
+      → Click any day header → switches to Day view
+      → Prev / Today / Next buttons to navigate weeks
+
+  [4] Month View:
+      → Full month calendar grid
+      → Each day cell shows up to 2 appointment chips
+      → "+" shows if more than 2
+      → Click any day → switches to Day view for that day
+
+  [5] Click-to-Move (Reschedule):
+      → Doctor clicks an appointment card
+          → Banner appears: "📌 Moving: Patient — Type. Click empty slot"
+      → Doctor clicks any empty time slot
+      → Frontend calls: GET /api/appointments/slots?doctorId=xxx&date=xxx
+          → Backend calculates all busyWindows (booked time blocks)
+          → Returns free 60-min slots (8AM–7PM)
+      → Frontend checks: does new slot overlap with any busyWindow?
+          • YES → shows error: "Conflict! Slot already taken"
+          • NO  → calls PUT /api/appointments/:id with new date
+                  → saves rescheduleReason in rescheduleHistory[]
+                  → patient gets notified via Socket.io
+                  → calendar refreshes
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+3. PATIENTS TAB
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+WHAT IT DOES:
+  Shows the doctor a list of all registered patients with their details.
+
+HOW IT WORKS:
+
+  [1] Page Load:
+      → GET /api/users/patients
+      → Returns all users in DB where role = 'patient'
+      → Displays: Name | Email | Phone | Status (active/inactive)
+
+  NOTE:
+      This tab uses the GLOBAL patient list (not filtered by doctor).
+      Doctor-scoped filtering was already applied to:
+        - Notifications Tab (uses /api/users/my-patients)
+        - Patient Files Tab (uses /api/users/my-patients)
+        - Diet Table Tab   (uses /api/users/my-patients)
+      But the Patients tab shows ALL registered patients.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+4. THERAPIES TAB
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+WHAT IT DOES:
+  Doctor manages Therapy treatment plans for patients.
+  Separate from Appointments — these are long-term care plans.
+
+HOW IT WORKS:
+
+  [1] Page Load:
+      → GET /api/therapies → returns therapies scoped to logged-in doctor
+
+  [2] Therapy Model stores:
+      • name             → therapy plan name
+      • patientId        → linked patient
+      • patientName      → for display
+      • type             → e.g. Panchakarma, Shirodhara
+      • totalSessions    → how many sessions planned
+      • completedSessions→ how many done so far
+      • progress         → completedSessions / totalSessions × 100 (%)
+      • status           → active | completed | paused
+      • milestones[]     → achievement records
+      • symptomLog[]     → patient-logged symptoms
+      • practitionerNotes→ doctor's clinical notes
+
+  [3] Doctor can:
+      → Create new therapy plan for a patient
+      → Update therapy status (active / completed / paused)
+      → Add milestones (shown as badges with icons)
+      → Write/save practitioner notes
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+5. LIVE TRACKING TAB
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+FILE: ayursutra-react/src/pages/doctor/TherapyTrackingTab.jsx
+
+WHAT IT DOES:
+  Shows which therapy sessions are HAPPENING RIGHT NOW.
+  Doctor can mark sessions as complete, add milestones, write notes.
+
+HOW IT WORKS:
+
+  [1] Page Load:
+      → 2 APIs called at the same time:
+          • GET /api/tracking/therapies → all therapy plans for this doctor
+          • GET /api/appointments       → all appointments for this doctor
+      → Auto-refreshes every 15 seconds
+
+  [2] Live Session Detection (pure JavaScript math):
+
+      For each appointment:
+        start = appointment.date
+        end   = appointment.date + appointment.duration (in minutes)
+
+        If: current time >= start  AND  current time <= end
+            AND status is not 'cancelled' or 'completed'
+        → That session is LIVE NOW
+
+      → If any live sessions found:
+          → Green pulsing 🟢 banner appears at top of the page
+          → Shows patient name, therapy type, start time, duration
+
+  [3] Live Session Actions:
+      → ✓ Complete → PUT /api/appointments/:id { status: 'completed' }
+                   → Patient gets Socket.io notification
+      → Missed    → PUT /api/appointments/:id { status: 'missed' }
+
+  [4] Quick Stats Cards:
+      → Today's Sessions  → appointments where date == today
+      → Active Therapies  → therapies where status == 'active'
+      → Completed Today   → today's appointments where status == 'completed'
+      → Live Now          → count of currently live sessions
+
+  [5] Therapy Cards (expandable):
+      → Each therapy shown as a card with progress bar
+      → Click card → expands to show:
+
+          📝 PRACTITIONER NOTES:
+              → Editable textarea
+              → "Save Notes" → PATCH /api/tracking/:id/notes
+              → Saved to MongoDB immediately
+
+          🩺 PATIENT SYMPTOM LOG:
+              → Read-only (filled by patient from their dashboard)
+              → Shown in reverse order (latest first)
+              → Color-coded by severity:
+                  Green  = mild
+                  Orange = moderate
+                  Red    = severe
+
+          🏆 MILESTONES:
+              → Doctor clicks "+ Add Milestone"
+              → Fills: Name | Icon (emoji picker) | Description
+              → POST /api/tracking/milestone
+              → Saved to DB, shown as badge chips
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+OVERALL DATA FLOW
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  MongoDB (Atlas)
+      ↕
+  Express API (Node.js)   — all routes require JWT Bearer token
+      ↕
+  Axios (api.js)          — auto-attaches token from localStorage
+      ↕
+  React Services          — appointmentService.js / trackingService.js
+      ↕
+  React Components        — useState + useEffect + setInterval
+      ↕
+  Doctor Dashboard UI
+
+  Real-time (Socket.io):
+  → Doctor changes status → patient receives instant notification
+  → Patient logs symptoms → doctor receives real-time socket event
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+AUTO-REFRESH TIMERS (currently active)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Tab             | Refresh Interval
+  ----------------|------------------
+  Appointments    | Every 10 seconds
+  Schedule        | Every 20 seconds
+  Live Tracking   | Every 15 seconds
+  Analytics       | Every 30 seconds
+
+==============================================================
+END OF FILE
+==============================================================

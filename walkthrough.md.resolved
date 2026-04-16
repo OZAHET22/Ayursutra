@@ -1,0 +1,118 @@
+# Backend Integration — Walkthrough
+
+## What Was Built
+
+A full **Node.js + Express + MongoDB** backend connected to the React frontend.
+
+---
+
+## Backend Structure (`ayursutra-backend/`)
+
+```
+ayursutra-backend/
+├── server.js              ← Express app entry point (port 5000)
+├── .env                   ← MONGO_URI, JWT_SECRET config
+├── config/db.js           ← MongoDB connection
+├── middleware/auth.js     ← JWT verification + role guard
+├── models/
+│   ├── User.js            ← Patient / Doctor / Admin
+│   ├── Appointment.js
+│   ├── Therapy.js
+│   ├── Invoice.js
+│   └── Feedback.js
+├── routes/
+│   ├── auth.js            ← POST /login, /register, GET /me
+│   ├── users.js           ← GET /patients, /doctors, PUT/DELETE /:id
+│   ├── appointments.js    ← Full CRUD
+│   ├── therapies.js       ← Full CRUD
+│   ├── invoices.js        ← Full CRUD (doctor-owned)
+│   └── feedback.js        ← CRUD + doctor reply
+└── seedData.js            ← Demo data seeder
+```
+
+## Frontend Services (`src/services/`)
+
+```
+src/services/
+├── api.js              ← Axios instance with JWT auto-attach
+├── authService.js      ← login, register, logout, getMe
+├── appointmentService.js
+├── invoiceService.js
+├── feedbackService.js
+└── userService.js
+```
+
+**[AuthContext.jsx](file:///c:/Users/het22/Downloads/chatgpt%20react/ayursutra-react/src/context/AuthContext.jsx)** updated to call real API — login/register/logout all go through the backend.
+
+---
+
+## Verified Working ✅
+
+```json
+GET /api/health  →  {"success": true, "message": "Ayursutra API is running 🌿"}
+
+POST /api/auth/login (patient@demo.com / demo123)
+→ {"success": true, "token": "eyJ...", "user": {"role": "patient", "name": "Priya Sharma", ...}}
+```
+
+---
+
+## How to Run
+
+### Step 1 — Start MongoDB
+Make sure MongoDB is running on your computer. If installed, it usually starts automatically. You can verify by searching "MongoDB" in Windows Services.
+
+### Step 2 — Start the Backend (one-time seed, then start)
+Open a **new terminal** and run:
+```bash
+cd "c:\Users\het22\Downloads\chatgpt react\ayursutra-backend"
+
+# First time only — seed demo data:
+node seedData.js
+
+# Then start the server:
+node server.js
+```
+
+You should see:
+```
+🚀 Ayursutra backend running on http://localhost:5000
+✅ MongoDB Connected: 127.0.0.1
+```
+
+### Step 3 — Start the React Frontend
+In the existing terminal (already running):
+```bash
+cd "c:\Users\het22\Downloads\chatgpt react\ayursutra-react"
+npm run dev
+```
+
+### Step 4 — Open the App
+Go to: **http://localhost:5173**
+
+---
+
+## Demo Login Credentials
+
+| Role | Email | Password |
+|---|---|---|
+| 🏥 Patient | patient@demo.com | demo123 |
+| 👨‍⚕️ Doctor | doctor@demo.com | demo123 |
+| 🔑 Admin | admin@demo.com | demo123 |
+
+---
+
+## API Endpoints Summary
+
+| Group | Base URL | Auth |
+|---|---|---|
+| Auth | `POST /api/auth/login` | Public |
+| Auth | `POST /api/auth/register` | Public |
+| Auth | `GET /api/auth/me` | Token |
+| Patients | `GET /api/users/patients` | Doctor/Admin |
+| Doctors | `GET /api/users/doctors` | Any logged-in |
+| Appointments | `GET/POST/PUT/DELETE /api/appointments` | Role-filtered |
+| Therapies | `GET/POST/PUT/DELETE /api/therapies` | Role-filtered |
+| Invoices | `GET/POST/PUT/DELETE /api/invoices` | Doctor/Admin |
+| Feedback | `GET/POST /api/feedback` | Role-filtered |
+| Feedback reply | `PUT /api/feedback/:id/reply` | Doctor |
