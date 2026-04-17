@@ -13,8 +13,8 @@ function createTransporter() {
     return nodemailer.createTransport({
         service: 'gmail',
         auth: {
-            user: process.env.SMTP_USER,
-            pass: process.env.SMTP_PASS,
+            user: process.env.EMAIL_USER,
+            pass: process.env.EMAIL_PASSWORD,
         },
     });
 }
@@ -25,18 +25,18 @@ function createTransporter() {
  */
 async function verifyTransporter() {
     const transporter = createTransporter();
-    // Diagnostic: print first 4 chars of SMTP_PASS so devs can spot CRLF corruption
-    const passMasked = process.env.SMTP_PASS
-        ? process.env.SMTP_PASS.replace(/[\r\n]/g, '⏎').slice(0, 4) + '****'
+    // Diagnostic: print first 4 chars of EMAIL_PASSWORD so devs can spot CRLF corruption
+    const passMasked = process.env.EMAIL_PASSWORD
+        ? process.env.EMAIL_PASSWORD.replace(/[\r\n]/g, '⏎').slice(0, 4) + '****'
         : '(not set)';
-    console.log(`[SMTP] Verifying Gmail: ${process.env.SMTP_USER} | Pass prefix: ${passMasked}`);
+    console.log(`[SMTP] Verifying Gmail: ${process.env.EMAIL_USER} | Pass prefix: ${passMasked}`);
     try {
         await transporter.verify();
         console.log('[SMTP] Gmail connection verified ✓ — OTP emails will be delivered.');
         return true;
     } catch (err) {
         console.error('[SMTP] ❌ Gmail connection FAILED:', err.message);
-        console.error('[SMTP] Check SMTP_USER and SMTP_PASS in .env — make sure the Gmail App Password is correct and 2FA is enabled on the account.');
+        console.error('[SMTP] Check EMAIL_USER and EMAIL_PASSWORD in .env — make sure the Gmail App Password is correct and 2FA is enabled on the account.');
         return false;
     }
 }

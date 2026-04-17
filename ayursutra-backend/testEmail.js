@@ -27,19 +27,19 @@ try {
 
 const nodemailer = require('nodemailer');
 
-const SMTP_USER = process.env.SMTP_USER;
-const SMTP_PASS = process.env.SMTP_PASS;
+const EMAIL_USER = process.env.EMAIL_USER;
+const EMAIL_PASSWORD = process.env.EMAIL_PASSWORD;
 
-if (!SMTP_USER || !SMTP_PASS) {
-    console.error('ERROR: SMTP_USER or SMTP_PASS missing from .env');
+if (!EMAIL_USER || !EMAIL_PASSWORD) {
+    console.error('ERROR: EMAIL_USER or EMAIL_PASSWORD missing from .env');
     process.exit(1);
 }
 
-console.log('Testing SMTP with user:', SMTP_USER);
+console.log('Testing SMTP with user:', EMAIL_USER);
 
 const transporter = nodemailer.createTransport({
     service: 'gmail',
-    auth: { user: SMTP_USER, pass: SMTP_PASS },
+    auth: { user: EMAIL_USER, pass: EMAIL_PASSWORD },
 });
 
 async function run() {
@@ -50,16 +50,16 @@ async function run() {
         console.log('  SMTP connection OK');
     } catch (err) {
         console.error('  SMTP connection FAILED:', err.message);
-        console.error('  Fix: Make sure 2FA is ON for', SMTP_USER, 'and the App Password is correct.');
+        console.error('  Fix: Make sure 2FA is ON for', EMAIL_USER, 'and the App Password is correct.');
         process.exit(1);
     }
 
     // Step 2: Send a real test email to the same account
-    console.log('Step 2: Sending test OTP email to', SMTP_USER, '...');
+    console.log('Step 2: Sending test OTP email to', EMAIL_USER, '...');
     try {
         const info = await transporter.sendMail({
-            from: 'Ayursutra OTP <' + SMTP_USER + '>',
-            to: SMTP_USER,
+            from: 'Ayursutra OTP <' + EMAIL_USER + '>',
+            to: EMAIL_USER,
             subject: '654321 — Ayursutra OTP Test Email',
             html: [
                 '<div style="font-family:Arial,sans-serif;max-width:500px;margin:auto;padding:32px;background:#f0fdf4;border-radius:12px;">',
@@ -72,7 +72,7 @@ async function run() {
         });
         console.log('  Email sent! Message ID:', info.messageId);
         console.log('');
-        console.log('SUCCESS: Check the inbox/spam of', SMTP_USER, 'for the test email.');
+        console.log('SUCCESS: Check the inbox/spam of', EMAIL_USER, 'for the test email.');
         console.log('If received, OTP emails are fully working. You can delete testEmail.js now.');
     } catch (err) {
         console.error('  Send FAILED:', err.message);
