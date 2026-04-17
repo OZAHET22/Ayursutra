@@ -241,6 +241,17 @@ TWILIO_AUTH_TOKEN=your_auth_token
 
 > ⚠️ **Never commit `.env` to Git.** It's already in `.gitignore`.
 
+### Render / Production (MongoDB Atlas non-SRV example)
+
+When deploying to Render you should set the `MONGO_URI` environment variable in the Render Dashboard. If your Render instance cannot resolve SRV records you can use the non-SRV (standard) connection string from Atlas. Example (replace <YOUR_ENCODED_PASSWORD> with the URL‑encoded DB password):
+
+```
+mongodb://Ayursutra:<YOUR_ENCODED_PASSWORD>@ac-x5ftyfv-shard-00-00.lymj0vw.mongodb.net:27017,ac-x5ftyfv-shard-00-01.lymj0vw.mongodb.net:27017,ac-x5ftyfv-shard-00-02.lymj0vw.mongodb.net:27017/ayursutra?ssl=true&replicaSet=atlas-r4lq2z-shard-0&authSource=admin&retryWrites=true&w=majority&appName=Ayursutra
+```
+
+Set `PORT=3000` (or leave blank to use Render's default) and other secrets in the Render Environment section. After saving, trigger a manual redeploy so the new variables take effect.
+
+
 ---
 
 ## Architecture & Data Flow
