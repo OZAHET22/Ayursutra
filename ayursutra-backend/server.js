@@ -26,6 +26,7 @@ const express = require('express');
 const cors = require('cors');
 const { Server } = require('socket.io');
 const cron = require('node-cron');
+const mongoose = require('mongoose');
 const connectDB = require('./config/db');
 
 // Connect to MongoDB
@@ -247,11 +248,37 @@ const HOST = '0.0.0.0';
 server.listen(PORT, HOST, async () => {
     console.log(`🚀 Ayursutra backend running on http://${HOST}:${PORT}`);
     console.log(`🔌 Socket.io enabled`);
-    // Verify SMTP (Gmail) connection on startup — logs clear error if credentials are wrong
-    const { verifyTransporter } = require('./utils/sendOTPEmail');
-    await verifyTransporter();
-    // Verify Whapi Cloud connection on startup
-    const { verifyWhatsAppConnection } = require('./services/notificationService');
-    await verifyWhatsAppConnection();
-    startCronScheduler();
+    // Verify SMTP (Gmail) connection on startup — catch errors so the server stays up
+    try {
+        const { verifyTransporter } = require('./utils/sendOTPEmail');
+        await verifyTransporter();
+    } catch (err) {
+        console.error('⚠️ verifyTransporter failed:', err && err.message ? err.message : err);
+    }
+    // Verify external WhatsApp connection on startup — catch errors
+    try {
+        const { verifyWhatsAppConnection } = require('./services/notificationService');
+        await verifyWhatsAppConnection();
+    } catch (err) {
+        console.error('⚠️ verifyWhatsAppConnection failed:', err && err.message ? err.message : err);
+    }
+    // Start cron scheduler only after MongoDB is connected. If not connected,
+    // wait for the 'connected' event and start the scheduler then.
+    if (mongoose.connection && mongoose.connection.readyState === 1) {
+        try {
+            startCronScheduler();
+        } catch (err) {
+            console.error('⚠️ startCronScheduler failed:', err && err.message ? err.message : err);
+        }
+    } else {
+        console.warn('⚠️ MongoDB not connected — deferring cron scheduler until connected');
+        mongoose.connection.once('connected', () => {
+            console.log('🔁 MongoDB connected — starting cron scheduler');
+            try {
+                startCronScheduler();
+            } catch (err) {
+                console.error('⚠️ startCronScheduler failed:', err && err.message ? err.message : err);
+            }
+        });
+    }
 });
