@@ -243,8 +243,9 @@ const startCronScheduler = () => {
 };
 
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, async () => {
-    console.log(`🚀 Ayursutra backend running on http://localhost:${PORT}`);
+const HOST = '0.0.0.0';
+server.listen(PORT, HOST, async () => {
+    console.log(`🚀 Ayursutra backend running on http://${HOST}:${PORT}`);
     console.log(`🔌 Socket.io enabled`);
     // Verify SMTP (Gmail) connection on startup — logs clear error if credentials are wrong
     const { verifyTransporter } = require('./utils/sendOTPEmail');
