@@ -20,9 +20,9 @@ EMAIL_USER=ozahet32@gmail.com
 EMAIL_PASSWORD=qqumniruvnnzvtin
 SMTP_USER=ozahet32@gmail.com
 SMTP_PASS=qqumniruvnnzvtin
-FRONTEND_URL=https://ayursutra.vercel.app
-ALLOWED_ORIGINS=https://ayursutra.vercel.app,http://localhost:5173
-SOCKET_IO_CORS_ORIGIN=https://ayursutra.vercel.app
+FRONTEND_URL=https://ayursutra-awalh28ov-ozahet22s-projects.vercel.app
+ALLOWED_ORIGINS=https://ayursutra-awalh28ov-ozahet22s-projects.vercel.app,http://localhost:5173
+SOCKET_IO_CORS_ORIGIN=https://ayursutra-awalh28ov-ozahet22s-projects.vercel.app
 TZ=Asia/Kolkata
 ```
 
@@ -103,21 +103,16 @@ Count to verify you added them all:
 
 ---
 
-## 🔄 Update MONGO_URI in Phase 3
+## 🔄 Important Notes
 
-When you set up MongoDB Atlas (Phase 3), you'll replace:
-
+**FRONTEND_URL**: Updated to your actual Vercel URL
 ```
-MONGO_URI=mongodb+srv://<db_username>:<AyurDB2026$ecure!>@ayursutra.kwbvej7.mongodb.net/?appName=Ayursutra
-```
-
-With:
-
-```
-MONGO_URI=mongodb+srv://ayursutra_user:PASSWORD@cluster.mongodb.net/ayursutra?retryWrites=true&w=majority
+https://ayursutra-awalh28ov-ozahet22s-projects.vercel.app
 ```
 
-For now, use the current value.
+**MONGO_URI**: Update in Phase 3 when you set up MongoDB Atlas
+
+For now, use the current MongoDB connection string.
 
 ---
 

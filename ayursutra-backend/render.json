@@ -32,7 +32,7 @@
     },
     "FRONTEND_URL": {
       "description": "Frontend deployment URL",
-      "value": "https://ayursutra.vercel.app"
+      "value": "https://ayursutra-awalh28ov-ozahet22s-projects.vercel.app"
     },
     "FIREBASE_PROJECT_ID": {
       "description": "Firebase project ID",

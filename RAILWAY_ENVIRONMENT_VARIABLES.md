@@ -134,19 +134,19 @@ Value: qqumniruvnnzvtin
 #### 12. Frontend URL (for CORS)
 ```
 Key: FRONTEND_URL
-Value: https://ayursutra.vercel.app
+Value: https://ayursutra-awalh28ov-ozahet22s-projects.vercel.app
 ```
 
 #### 13. Allowed Origins (CORS)
 ```
 Key: ALLOWED_ORIGINS
-Value: https://ayursutra.vercel.app,http://localhost:5173
+Value: https://ayursutra-awalh28ov-ozahet22s-projects.vercel.app,http://localhost:5173
 ```
 
 #### 14. Socket.IO CORS Origin
 ```
 Key: SOCKET_IO_CORS_ORIGIN
-Value: https://ayursutra.vercel.app
+Value: https://ayursutra-awalh28ov-ozahet22s-projects.vercel.app
 ```
 
 #### 15. Timezone
