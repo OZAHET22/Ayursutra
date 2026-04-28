@@ -131,7 +131,12 @@ app.use('/api/blocks',           require('./routes/blocks'));
 app.use('/api/doctor-schedule', require('./routes/doctorSchedule'));
 app.use('/api/invoices',         require('./routes/invoices'));
 
-// Health check
+// Health check (for Railway/monitoring services)
+app.get('/health', (req, res) => {
+    res.json({ status: 'healthy', timestamp: new Date().toISOString() });
+});
+
+// Detailed health check for API
 app.get('/api/health', (req, res) => {
     res.json({ success: true, message: 'Ayursutra API is running 🌿', time: new Date(), socketio: true });
 });

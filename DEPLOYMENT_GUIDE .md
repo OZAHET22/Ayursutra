@@ -11,8 +11,8 @@
 ## DEPLOYMENT OPTIONS & RECOMMENDED PLATFORMS
 
 ### OPTION 1: Budget-Friendly Solution (Recommended for startups)
-- **Backend**: Railway, Render, or Heroku
-- **Frontend**: Vercel, Netlify, or Cloudflare Pages
+- **Backend**: Railway,
+- **Frontend**: Vercel, 
 - **Database**: MongoDB Atlas (free tier)
 - **Cost**: ~$5-10/month
 

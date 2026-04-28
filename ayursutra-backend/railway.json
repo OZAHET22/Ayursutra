@@ -6,6 +6,44 @@
   "deploy": {
     "startCommand": "node server.js",
     "restartPolicyType": "ON_FAILURE",
-    "restartPolicyMaxRetries": 5
+    "restartPolicyMaxRetries": 5,
+    "healthchecks": {
+      "readiness": {
+        "initialDelaySeconds": 10,
+        "periodSeconds": 10,
+        "timeoutSeconds": 5,
+        "httpGet": {
+          "path": "/health",
+          "port": 5000
+        }
+      }
+    }
+  },
+  "variables": {
+    "PORT": "5000",
+    "NODE_ENV": "production",
+    "MONGO_URI": {
+      "description": "MongoDB Atlas connection string"
+    },
+    "JWT_SECRET": {
+      "description": "JWT secret key for authentication"
+    },
+    "JWT_EXPIRE": "7d",
+    "EMAIL_USER": {
+      "description": "Gmail SMTP address"
+    },
+    "EMAIL_PASSWORD": {
+      "description": "Gmail app-specific password"
+    },
+    "FRONTEND_URL": "https://ayursutra.vercel.app",
+    "FIREBASE_PROJECT_ID": {
+      "description": "Firebase project ID"
+    },
+    "FIREBASE_PRIVATE_KEY": {
+      "description": "Firebase private key"
+    },
+    "FIREBASE_CLIENT_EMAIL": {
+      "description": "Firebase client email"
+    }
   }
 }
