@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import API from '../../services/api';
 
 const CHART_COLORS = ['#4caf50', '#2196f3', '#ff9800', '#9c27b0', '#f44336', '#00bcd4', '#8bc34a'];
@@ -97,13 +97,13 @@ function EmptyState({ icon, text }) {
     return <div style={{ textAlign: 'center', padding: '2rem', color: '#aaa' }}><div style={{ fontSize: '2rem' }}>{icon}</div><p style={{ marginTop: '0.5rem', fontSize: '0.85rem' }}>{text}</p></div>;
 }
 
-export default function AnalyticsTab() {
+export default function AnalyticsTab({ user }) {
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [activeFilter, setActiveFilter] = useState('all');
 
-    const load = async () => {
+    const load = useCallback(async () => {
         try {
             setError(null);
             const res = await API.get('/analytics');
@@ -113,13 +113,13 @@ export default function AnalyticsTab() {
         } finally {
             setLoading(false);
         }
-    };
+    }, []);
 
     useEffect(() => {
         load();
         const interval = setInterval(load, 30000);
         return () => clearInterval(interval);
-    }, []);
+    }, [load]);
 
     if (loading) return (
         <div className="tab-content active" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '300px' }}>
@@ -141,17 +141,21 @@ export default function AnalyticsTab() {
     );
 
     // ── Map API data to chart format ────────────────────────────────────────
-    const therapyLabels = (data.therapySuccess || []).map(t => t.therapyType || t._id || '?');
-    const therapyValues = (data.therapySuccess || []).map(t => t.successRate || 0);
+    // Filter out null/undefined types (appointments missing type field)
+    const validTherapy = (data.therapySuccess || []).filter(t => t.therapyType && t.therapyType !== 'null');
+    const therapyLabels = validTherapy.map(t => t.therapyType);
+    const therapyValues = validTherapy.map(t => t.successRate || 0);
 
-    const patientDistLabels = (data.patientDist || []).map(t => t.label || t._id || '?');
-    const patientDistValues = (data.patientDist || []).map(t => t.count || 0);
+    const validDist = (data.patientDist || []).filter(t => (t.label || t._id) && (t.label || t._id) !== 'null');
+    const patientDistLabels = validDist.map(t => t.label || t._id || '?');
+    const patientDistValues = validDist.map(t => t.count || 0);
 
     const growthLabels = (data.monthlyGrowth || []).map(m => m.label || '');
     const growthValues = (data.monthlyGrowth || []).map(m => m.count || 0);
 
     const retentionRate = data.retentionRate || 0;
-    const dropRate = data.dropRate || 0;
+    const dropRate = data.dropRate != null ? data.dropRate : (100 - retentionRate);
+    const hasRetentionData = (data.totalPatients || 0) > 0;
 
     const statusMap = {};
     (data.statusBreakdown || []).forEach(s => { statusMap[s._id] = s.count; });
@@ -224,7 +228,7 @@ export default function AnalyticsTab() {
                             ? <EmptyState icon="🔄" text="No patient history yet." />
                             : <>
                                 <DonutChart
-                                    data={[retentionRate, dropRate]}
+                                    data={hasRetentionData ? [retentionRate, dropRate] : [0, 100]}
                                     labels={['Retained (>1 visit)', 'Single-visit']}
                                     colors={['#4caf50', '#f44336']}
                                     size={170} cutout={65}

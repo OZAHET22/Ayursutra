@@ -15,139 +15,281 @@
     min-height: 100vh;
 }
 
-/* Header */
+/* ── Compact Header (56–60px) ─────────────────────────────────────────────── */
 .dashboard-header {
     background: #ffffff;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    padding: 1rem 2rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.10), 0 1px 8px rgba(0, 0, 0, 0.06);
+    padding: 0 20px;
+    height: 58px;
     display: flex;
     justify-content: space-between;
     align-items: center;
     position: sticky;
     top: 0;
-    z-index: 100;
+    z-index: 200;
+    gap: 12px;
 }
 
 .header-left .logo {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: 8px;
     cursor: pointer;
+    text-decoration: none;
+    flex-shrink: 0;
 }
 
 .dash-logo-icon {
-    font-size: 1.8rem;
+    font-size: 22px;
+    line-height: 1;
 }
 
 .dash-logo-text {
-    font-size: 1.5rem;
+    font-size: 17px;
     font-weight: 700;
     color: #2a7d2e;
+    letter-spacing: -0.2px;
+    white-space: nowrap;
 }
 
-.user-info {
+/* ── Header Right cluster ──────────────────────────────────────────────────── */
+.header-right {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+/* ── User menu (avatar + name → dropdown) ─────────────────────────────────── */
+.user-menu-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.user-menu-trigger {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    background: none;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 5px 10px 5px 6px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+    user-select: none;
+}
+
+.user-menu-trigger:hover {
+    background: #f3f4f6;
+    border-color: #d1d5db;
 }
 
 .user-avatar {
-    width: 40px;
-    height: 40px;
+    width: 30px;
+    height: 30px;
     border-radius: 50%;
-    background-color: #f0f0f0;
+    background: linear-gradient(135deg, #d1fae5, #a7f3d0);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 1.2rem;
+    font-size: 14px;
+    flex-shrink: 0;
+    border: 1.5px solid #6ee7b7;
 }
 
 .user-details {
     display: flex;
     flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+    max-width: 140px;
 }
 
 .user-name {
     font-weight: 600;
+    font-size: 12.5px;
+    color: #111827;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 130px;
+    line-height: 1.2;
 }
 
 .user-role {
-    font-size: 0.85rem;
-    color: #777;
+    font-size: 11px;
+    color: #6b7280;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 130px;
+    line-height: 1.2;
 }
 
-.logout-btn {
-    background: #f44336;
-    color: #fff;
+.user-menu-caret {
+    font-size: 8px;
+    color: #9ca3af;
+    margin-left: 2px;
+    transition: transform 0.2s;
+    flex-shrink: 0;
+}
+
+.user-menu-caret.open {
+    transform: rotate(180deg);
+}
+
+/* ── Dropdown panel ────────────────────────────────────────────────────────── */
+.user-menu-dropdown {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    min-width: 200px;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.06);
+    overflow: hidden;
+    z-index: 500;
+    animation: dropdownFadeIn 0.15s ease;
+}
+
+@keyframes dropdownFadeIn {
+    from { opacity: 0; transform: translateY(-6px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.user-menu-header {
+    padding: 12px 14px;
+    border-bottom: 1px solid #f3f4f6;
+    background: #f9fafb;
+}
+
+.user-menu-header-name {
+    font-weight: 700;
+    font-size: 13px;
+    color: #111827;
+    margin-bottom: 2px;
+}
+
+.user-menu-header-role {
+    font-size: 11px;
+    color: #6b7280;
+}
+
+.user-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 14px;
+    background: none;
     border: none;
-    padding: 0.5rem 1rem;
-    border-radius: 6px;
     cursor: pointer;
-    font-size: 0.9rem;
-    font-weight: 600;
-    margin-left: 1rem;
+    font-size: 13px;
+    color: #374151;
+    text-align: left;
+    transition: background 0.12s;
 }
 
-.logout-btn:hover {
-    background: #c62828;
+.user-menu-item:hover {
+    background: #f3f4f6;
 }
 
-/* Layout */
+.user-menu-item.danger {
+    color: #dc2626;
+}
+
+.user-menu-item.danger:hover {
+    background: #fef2f2;
+}
+
+.user-menu-divider {
+    height: 1px;
+    background: #f3f4f6;
+    margin: 2px 0;
+}
+
+/* ── Legacy logout-btn — kept as fallback but hidden in favour of dropdown ── */
+.logout-btn {
+    display: none;
+}
+
+/* ── Dashboard layout ─────────────────────────────────────────────────────── */
 .dashboard-layout {
     display: flex;
     flex: 1;
+    /* CRITICAL: Do NOT use overflow:hidden here — it creates a clip boundary that
+       blocks pointer-events on buttons near the edge of therapy/appointment cards.
+       Each child (.sidebar, .dashboard-main) handles its own scroll independently. */
+    overflow: visible;
 }
 
-/* Sidebar */
+/* ── Compact Sidebar (220px, tighter items) ───────────────────────────────── */
 .sidebar {
-    width: 250px;
+    width: 220px;
     background: #ffffff;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    padding: 1.5rem 0;
+    box-shadow: 1px 0 0 #e5e7eb;
+    padding: 8px 0;
     flex-shrink: 0;
+    overflow-y: auto;
+    position: sticky;
+    top: 58px;
+    height: calc(100vh - 58px);
 }
 
 .sidebar-menu {
     display: flex;
     flex-direction: column;
+    gap: 1px;
 }
 
 .menu-item {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    padding: 1rem 1.5rem;
+    gap: 9px;
+    padding: 9px 14px;
     text-decoration: none;
-    color: #333;
-    transition: all 0.3s ease;
+    color: #374151;
+    transition: background 0.15s, color 0.15s;
     cursor: pointer;
     border: none;
     background: none;
     width: 100%;
     text-align: left;
-    font-size: 1rem;
+    font-size: 13.5px;
+    font-weight: 500;
+    border-radius: 0;
+    letter-spacing: 0;
 }
 
 .menu-item:hover {
-    background-color: #f0f0f0;
+    background: #f3f4f6;
+    color: #111827;
 }
 
 .menu-item.active {
-    background-color: #4caf50;
-    color: #ffffff;
-    border-right: 4px solid #1b5e20;
+    background: #dcfce7;
+    color: #15803d;
+    font-weight: 600;
+    border-right: 3px solid #16a34a;
 }
 
 .menu-icon {
-    font-size: 1.2rem;
+    font-size: 15px;
+    flex-shrink: 0;
+    width: 18px;
+    text-align: center;
+    line-height: 1;
 }
 
 /* Main Content */
 .dashboard-main {
     flex: 1;
-    padding: 2rem;
+    padding: 1.5rem 2rem;
     overflow-y: auto;
-    background: #f9f9f9;
+    background: #f9fafb;
+    height: calc(100vh - 58px);
 }
 
 /* Tab Content */
@@ -273,6 +415,10 @@
 .dash-btn-sm {
     padding: 0.4rem 0.8rem;
     font-size: 0.85rem;
+    /* Explicitly ensure small buttons always receive pointer events */
+    pointer-events: auto;
+    position: relative;
+    z-index: 2;
 }
 
 /* Filters */
@@ -457,6 +603,10 @@
     border-radius: 8px;
     padding: 1.5rem;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    /* Ensure card creates its own stacking context so buttons are always
+       hit-testable above any sibling/parent stacking contexts */
+    position: relative;
+    z-index: 1;
 }
 
 .therapy-header {

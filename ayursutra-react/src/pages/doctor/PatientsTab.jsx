@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { getMyPatients } from '../../services/userService';
 
 export default function PatientsTab({ user, showNotification }) {
@@ -8,19 +8,19 @@ export default function PatientsTab({ user, showNotification }) {
     const [search, setSearch] = useState('');
     const [showHealth, setShowHealth] = useState(null);
 
-    const loadPatients = async () => {
+    const loadPatients = useCallback(async () => {
         try {
             const data = await getMyPatients();
             setPatients(data || []);
         } catch (err) { console.error('Failed to load patients:', err); }
         finally { setLoading(false); }
-    };
+    }, []);
 
     useEffect(() => {
         loadPatients();
         const interval = setInterval(loadPatients, 20000);
         return () => clearInterval(interval);
-    }, []);
+    }, [loadPatients]);
 
     const filtered = useMemo(() => {
         let list = patients.filter(p =>

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { getTherapies } from '../../services/therapyService';
 
 export default function TherapiesTab({ user }) {
@@ -7,20 +7,20 @@ export default function TherapiesTab({ user }) {
     const [sortBy, setSortBy] = useState('name-asc');
     const [expanded, setExpanded] = useState(null);
 
-    const loadTherapies = async () => {
+    const loadTherapies = useCallback(async () => {
         try {
             const data = await getTherapies();
             setTherapies(data || []);
         } catch (err) {
             console.error('Failed to load therapies:', err);
         } finally { setLoading(false); }
-    };
+    }, []);
 
     useEffect(() => {
         loadTherapies();
         const interval = setInterval(loadTherapies, 15000);
         return () => clearInterval(interval);
-    }, []);
+    }, [loadTherapies]);
 
     const sorted = [...therapies].sort((a, b) => {
         if (sortBy === 'name-asc') return (a.name || '').localeCompare(b.name || '');

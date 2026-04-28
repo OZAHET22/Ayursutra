@@ -1,7 +1,7 @@
 /**
  * routes/otp.js
- * POST /api/otp/send    — generate & email/sms OTP (with disposable email + VoIP blocks)
- * POST /api/otp/verify  — verify OTP → issue Firebase Custom Token + JWT fallback
+ * POST /api/otp/send    — generate & email OTP (with disposable email blocks)
+ * POST /api/otp/verify  — verify OTP → issue JWT
  */
 const express = require('express');
 const router  = express.Router();
@@ -15,39 +15,15 @@ const AbuseLog     = require('../models/AbuseLog');
 const { validateEmail } = require('../utils/emailValidator');
 const { validatePhone } = require('../utils/phoneValidator');
 const { sendOTPEmail }  = require('../utils/sendOTPEmail');
-const admin             = require('../utils/firebaseAdmin');
 
 const OTP_EXPIRE_MINUTES = 5;
 const MAX_ATTEMPTS       = 5;
 const RESEND_COOLDOWN_S  = 30; // seconds between resend requests
 
 const DEMO_EMAILS = new Set(['patient@demo.com', 'doctor@demo.com', 'admin@demo.com']);
-const DEMO_PHONES = new Set(['+919999999999']); // Allow a demo phone for frontend testing 
 
 function generateOTP() {
     return String(crypto.randomInt(100000, 999999));
-}
-
-// Helper to send SMS via Fast2SMS
-async function sendOTPSMS(phone, code) {
-    if (!process.env.FAST2SMS_API_KEY || process.env.FAST2SMS_API_KEY === 'your_fast2sms_api_key_here' || DEMO_PHONES.has(phone)) {
-        console.log(`[OTP DEMO SMS] ${phone} → code: ${code}`);
-        return; // Dev fallback
-    }
-    try {
-        const cleaned = phone.replace('+91', '');
-        await axios.get('https://www.fast2sms.com/dev/bulkV2', {
-            params: {
-                authorization: process.env.FAST2SMS_API_KEY,
-                variables_values: code,
-                route: 'otp',
-                numbers: cleaned
-            }
-        });
-    } catch (e) {
-        console.error('[SMS ERROR]', e.response?.data || e.message);
-        throw new Error('Failed to dispatch SMS.');
-    }
 }
 
 // ── Rate limiter helper ───────────────────────────────────────────
@@ -151,6 +127,11 @@ router.post('/send', async (req, res) => {
         // 8. Dispatch OTP
         let sent = false;
         let pErr = null;
+        let savedOtp = null;
+
+        // Re-fetch the doc we just created so we can delete it on failure
+        savedOtp = await OTP.findOne({ target: validatedTarget, targetType, purpose, used: false }).sort({ createdAt: -1 });
+
         if (targetType === 'email') {
             if (DEMO_EMAILS.has(validatedTarget)) { sent = true; }
             else {
@@ -159,16 +140,19 @@ router.post('/send', async (req, res) => {
                     pErr = e.message;
                     // Surface the real SMTP error in server logs for easy debugging
                     console.error(`[OTP/send] ❌ SMTP delivery FAILED for ${validatedTarget} (${purpose}):`, e.message);
-                    console.error('[OTP/send] Check SMTP_USER and SMTP_PASS in .env — run: node testEmail.js');
+                    console.error('[OTP/send] Check EMAIL_USER and EMAIL_PASSWORD in .env — run: node testEmail.js');
                 }
             }
         } else {
-            try { await sendOTPSMS(validatedTarget, code); sent = true; } 
-            catch(e) { pErr = e.message; }
+            // Phone OTP via SMS not supported — treat as sent for phone-only flows
+            console.log(`[OTP/send] Phone OTP requested for ${validatedTarget} — SMS not configured, OTP: ${code}`);
+            sent = true;
         }
 
-        // If dispatch genuinely failed (not a demo shortcut), tell the frontend
+        // If dispatch genuinely failed (not a demo shortcut), clean up the saved OTP
+        // so the user is not stuck behind a RESEND_COOLDOWN for a code that was never delivered.
         if (!sent && pErr) {
+            if (savedOtp) await OTP.deleteOne({ _id: savedOtp._id });
             return res.status(500).json({
                 success: false,
                 message: 'Failed to send OTP email. Please verify your email address is correct and try again.',

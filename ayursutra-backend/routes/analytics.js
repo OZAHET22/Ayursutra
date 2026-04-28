@@ -2,16 +2,20 @@ const express = require('express');
 const router = express.Router();
 const { protect } = require('../middleware/auth');
 const Appointment = require('../models/Appointment');
-const User = require('../models/User');
-const Therapy = require('../models/Therapy');
+const mongoose = require('mongoose');
 
 // GET /api/analytics — real computed analytics for logged-in doctor
 router.get('/', protect, async (req, res) => {
     try {
-        const doctorId = req.user.role === 'doctor' ? req.user.id : req.query.doctorId;
-        const matchDoctor = doctorId ? { doctorId: require('mongoose').Types.ObjectId.createFromHexString
-            ? require('mongoose').Types.ObjectId.createFromHexString(doctorId)
-            : new (require('mongoose').Types.ObjectId)(doctorId) } : {};
+        const rawDoctorId = req.user.role === 'doctor' ? req.user.id : req.query.doctorId;
+        let matchDoctor = {};
+        if (rawDoctorId) {
+            try {
+                matchDoctor = { doctorId: new mongoose.Types.ObjectId(rawDoctorId) };
+            } catch {
+                return res.status(400).json({ success: false, message: 'Invalid doctorId' });
+            }
+        }
 
         // 1. Therapy Success Rate — % of completed appointments per therapy type
         const therapySuccess = await Appointment.aggregate([

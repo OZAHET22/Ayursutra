@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Notification from '../components/Notification';
-import { getPatients, getDoctors, getPendingDoctors, approveDoctor, deleteUser } from '../services/userService';
+import { getPatients, getDoctors, getPendingDoctors, approveDoctor, revokeDoctor, deleteUser } from '../services/userService';
 import * as appointmentService from '../services/appointmentService';
 import { deleteAppointment, bulkDeleteAppointments } from '../services/appointmentService';
 import { getCentres, addCentre as apiAddCentre, removeCentre as apiRemoveCentre } from '../services/centreService';
@@ -31,6 +31,17 @@ export default function AdminPanel({ user, onLogout, showNotification, notificat
     const [loading, setLoading] = useState(true);
     const [showCentreModal, setShowCentreModal] = useState(false);
     const [centreForm, setCentreForm] = useState({ id: '', name: '' });
+    const [menuOpen, setMenuOpen] = useState(false);
+    const menuRef = useRef(null);
+
+    // Close user menu on outside click
+    useEffect(() => {
+        const handler = (e) => {
+            if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false);
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, []);
 
     const loadData = async () => {
         try {
@@ -69,9 +80,18 @@ export default function AdminPanel({ user, onLogout, showNotification, notificat
     const handleApprove = async (id) => {
         try {
             await approveDoctor(id);
-            showNotification('Doctor approved! They can now receive patient bookings.', 'success');
+            showNotification('Doctor approved! They are now visible to patients.', 'success');
             loadData();
         } catch { showNotification('Failed to approve doctor.', 'error'); }
+    };
+
+    const handleRevoke = async (id, name) => {
+        if (!window.confirm(`Hide Dr. ${name} from patients? They can be re-approved anytime.`)) return;
+        try {
+            await revokeDoctor(id);
+            showNotification(`Dr. ${name} hidden from patients. Re-approve anytime.`, 'info');
+            loadData();
+        } catch { showNotification('Failed to revoke doctor.', 'error'); }
     };
 
     const handleDeleteUser = async (id) => {
@@ -156,28 +176,49 @@ export default function AdminPanel({ user, onLogout, showNotification, notificat
             )}
             <div className="dashboard-container">
                 {/* Header */}
-                <header className="dashboard-header" style={{ background: '#1b3a4b', color: '#fff' }}>
+                <header className="dashboard-header" style={{ background: '#1b3a4b', borderBottom: '1px solid #243f52' }}>
                     <div className="header-left">
                         <div className="logo">
                             <span className="dash-logo-icon">🌿</span>
-                            <span className="dash-logo-text" style={{ color: '#fff' }}>Ayursutra Admin</span>
+                            <span className="dash-logo-text" style={{ color: '#4ade80' }}>Ayursutra Admin</span>
                         </div>
                     </div>
                     <div className="header-right">
-                        <div className="user-info">
-                            <div className="user-avatar">🔑</div>
-                            <div className="user-details">
-                                <span className="user-name" style={{ color: '#fff' }}>{user.name}</span>
-                                <span className="user-role" style={{ color: '#aabbc8' }}>Super Admin</span>
-                            </div>
+                        {/* Avatar dropdown menu */}
+                        <div className="user-menu-wrapper" ref={menuRef}>
+                            <button
+                                className="user-menu-trigger"
+                                style={{ borderColor: '#2e526b', background: 'transparent' }}
+                                onClick={() => setMenuOpen(prev => !prev)}
+                                aria-label="Admin menu"
+                            >
+                                <div className="user-avatar" style={{ background: 'linear-gradient(135deg, #1e4d6b, #2e6e96)', border: '1.5px solid #3a7ca8' }}>🔑</div>
+                                <div className="user-details">
+                                    <span className="user-name" style={{ color: '#e2e8f0' }}>{user.name}</span>
+                                    <span className="user-role" style={{ color: '#94a3b8' }}>Super Admin</span>
+                                </div>
+                                <span className={`user-menu-caret${menuOpen ? ' open' : ''}`} style={{ color: '#64748b' }}>▼</span>
+                            </button>
+
+                            {menuOpen && (
+                                <div className="user-menu-dropdown">
+                                    <div className="user-menu-header">
+                                        <div className="user-menu-header-name">{user.name}</div>
+                                        <div className="user-menu-header-role">Super Admin</div>
+                                    </div>
+                                    <div className="user-menu-divider" />
+                                    <button className="user-menu-item danger" onClick={() => { setMenuOpen(false); onLogout(); }}>
+                                        <span>🚪</span> Sign out
+                                    </button>
+                                </div>
+                            )}
                         </div>
-                        <button className="logout-btn" onClick={onLogout}>Logout</button>
                     </div>
                 </header>
 
                 <div className="dashboard-layout">
                     {/* Sidebar */}
-                    <nav className="sidebar" style={{ background: '#1b3a4b' }}>
+                    <nav className="sidebar" style={{ background: '#1b3a4b', top: '58px', height: 'calc(100vh - 58px)' }}>
                         <div className="sidebar-menu">
                             {TABS.map(tab => (
                                 <button
@@ -207,8 +248,8 @@ export default function AdminPanel({ user, onLogout, showNotification, notificat
                                 {pendingDoctors.length > 0 && (
                                     <div style={{ background: '#fff3e0', border: '1px solid #ff9800', borderRadius: '12px', padding: '1rem 1.5rem', marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                         <div>
-                                            <div style={{ fontWeight: 700, color: '#e65100' }}>🔔 {pendingDoctors.length} Doctor{pendingDoctors.length > 1 ? 's' : ''} Awaiting Approval</div>
-                                            <div style={{ fontSize: '0.85rem', color: '#777' }}>New doctors who signed up and need your approval to accept patients.</div>
+                    <div style={{ fontWeight: 700, color: '#e65100' }}>🔔 {pendingDoctors.length} Doctor{pendingDoctors.length > 1 ? 's' : ''} Hidden / Pending Re-Approval</div>
+                                            <div style={{ fontSize: '0.85rem', color: '#777' }}>These doctors were revoked or signed up before auto-approval was enabled.</div>
                                         </div>
                                         <button className="dash-btn dash-btn-primary dash-btn-sm" onClick={() => setActiveTab('approvals')}>Review Now →</button>
                                     </div>
@@ -256,12 +297,15 @@ export default function AdminPanel({ user, onLogout, showNotification, notificat
                         {/* ===================== APPROVALS ===================== */}
                         {activeTab === 'approvals' && (
                             <div className="tab-content active">
-                                <div className="tab-header"><h2>Doctor Approval Requests</h2></div>
+                                <div className="tab-header"><h2>Doctor Visibility Management</h2></div>
+                                <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '10px', padding: '0.75rem 1rem', marginBottom: '1.25rem', fontSize: '0.85rem', color: '#1d4ed8' }}>
+                                    💡 <strong>Auto-Approve is ON:</strong> All new doctors are immediately visible to patients after signup. This tab shows doctors who have been <strong>revoked</strong> (hidden) and can be re-approved.
+                                </div>
                                 {pendingDoctors.length === 0 && (
                                     <div style={{ textAlign: 'center', padding: '3rem', color: '#777' }}>
                                         <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>✅</div>
-                                        <p>No pending doctor approvals.</p>
-                                        <p style={{ fontSize: '0.85rem' }}>All doctors have been reviewed.</p>
+                                        <p>No hidden or pending doctors.</p>
+                                        <p style={{ fontSize: '0.85rem' }}>All doctors are currently visible to patients.</p>
                                     </div>
                                 )}
                                 <div className="patients-grid">
@@ -285,8 +329,8 @@ export default function AdminPanel({ user, onLogout, showNotification, notificat
                                                 <p>📅 Registered: {new Date(d.createdAt).toLocaleDateString('en-IN')}</p>
                                             </div>
                                             <div style={{ padding: '0.75rem', background: '#fff3e0', borderRadius: '8px', marginBottom: '0.75rem', fontSize: '0.85rem', color: '#e65100' }}>
-                                                ⚠️ This doctor is not visible to patients until you approve them.
-                                            </div>
+                                                    ⚠️ This doctor is currently hidden from patients. Approve to make them visible.
+                                                </div>
                                             <div style={{ display: 'flex', gap: '0.5rem' }}>
                                                 <button className="dash-btn dash-btn-success dash-btn-sm" style={{ flex: 1 }} onClick={() => handleApprove(d._id)}>✓ Approve Doctor</button>
                                                 <button className="dash-btn dash-btn-danger dash-btn-sm" onClick={() => handleDeleteUser(d._id)}>✗ Reject</button>
@@ -386,7 +430,10 @@ export default function AdminPanel({ user, onLogout, showNotification, notificat
                                                     <p>🪪 BAMS License: {d.licenseNumber || '—'}</p>
                                                     <p>📅 Joined: {new Date(d.createdAt).toLocaleDateString('en-IN')}</p>
                                                 </div>
-                                                <button className="dash-btn dash-btn-danger dash-btn-sm" onClick={() => handleDeleteUser(d._id)}>Remove</button>
+                                                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                                    <button className="dash-btn dash-btn-danger dash-btn-sm" onClick={() => handleDeleteUser(d._id)}>🗑 Remove</button>
+                                                    <button className="dash-btn dash-btn-secondary dash-btn-sm" onClick={() => handleRevoke(d._id, d.name)} title="Hide from patients without deleting">🔒 Revoke</button>
+                                                </div>
                                             </div>
                                         );
                                     })}

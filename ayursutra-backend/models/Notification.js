@@ -5,7 +5,7 @@ const NotificationSchema = new mongoose.Schema({
     appointmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Appointment', default: null },
     type: {
         type: String,
-        enum: ['pre_24h', 'pre_1h', 'post_session', 'medication', 'followup', 'general'],
+        enum: ['pre_24h', 'pre_1h', 'post_session', 'medication', 'followup', 'prescription', 'general'],
         default: 'general'
     },
     channel: { type: String, enum: ['in_app', 'email', 'whatsapp', 'sms'], default: 'in_app' },

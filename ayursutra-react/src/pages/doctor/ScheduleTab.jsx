@@ -27,6 +27,12 @@ const STATUS_BORDER = { pending: '#ff9800', confirmed: '#4caf50', completed: '#9
 function DerivedSlotGrid({ appointments, date }) {
     const dateObj  = new Date(date + 'T00:00:00'); // local midnight
     const dateStr  = dateObj.toDateString();
+    // Real-time clock for past-slot marking (updates every 30s)
+    const [nowMs, setNowMs] = useState(Date.now());
+    useEffect(() => {
+        const iv = setInterval(() => setNowMs(Date.now()), 30000);
+        return () => clearInterval(iv);
+    }, []);
 
     const dayAppts = appointments.filter(a => {
         const d = new Date(a.date);
@@ -34,15 +40,21 @@ function DerivedSlotGrid({ appointments, date }) {
     });
 
     const freeCount   = SLOT_PERIODS.filter(({ hour, minute }) => {
-        const baseDate  = new Date(date + 'T00:00:00');
-        const slotStart = new Date(baseDate).setHours(hour, minute, 0, 0);
-        const slotEnd   = slotStart + 30 * 60000;
+        const baseDate    = new Date(date + 'T00:00:00');
+        const slotStartMs = new Date(baseDate).setHours(hour, minute, 0, 0);
+        if (slotStartMs <= nowMs) return false; // past slot = not free
+        const slotEnd = slotStartMs + 30 * 60000;
         return !dayAppts.some(a => {
             const aStart = new Date(a.date).getTime();
-            return aStart < slotEnd && (aStart + a.duration * 60000) > slotStart;
+            return aStart < slotEnd && (aStart + a.duration * 60000) > slotStartMs;
         });
     }).length;
-    const bookedCount = SLOT_PERIODS.length - freeCount;
+    const pastCount   = SLOT_PERIODS.filter(({ hour, minute }) => {
+        const baseDate    = new Date(date + 'T00:00:00');
+        const slotStartMs = new Date(baseDate).setHours(hour, minute, 0, 0);
+        return slotStartMs <= nowMs;
+    }).length;
+    const bookedCount = SLOT_PERIODS.length - freeCount - pastCount;
 
     return (
         <div>
@@ -56,8 +68,14 @@ function DerivedSlotGrid({ appointments, date }) {
                     <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#ef4444', flexShrink: 0 }} />
                     <span style={{ fontWeight: bookedCount > 0 ? 700 : 400 }}>Booked ({bookedCount})</span>
                 </div>
+                {pastCount > 0 && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                        <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#9ca3af', flexShrink: 0 }} />
+                        <span>Expired ({pastCount})</span>
+                    </div>
+                )}
                 <span style={{ marginLeft: 'auto', fontSize: '0.72rem', color: '#9ca3af' }}>
-                    🔒 Booked slots are locked — patients cannot double-book
+                    🔒 Booked slots locked · ⏰ Past slots expired
                 </span>
             </div>
 
@@ -67,21 +85,24 @@ function DerivedSlotGrid({ appointments, date }) {
                     const baseDate    = new Date(date + 'T00:00:00');
                     const slotStartMs = new Date(baseDate).setHours(hour, minute, 0, 0);
                     const slotEndMs   = slotStartMs + 30 * 60000;
+                    const isExpired   = slotStartMs <= nowMs;
                     const overlap     = dayAppts.find(a => {
                         const aStart = new Date(a.date).getTime();
                         const aEnd   = aStart + a.duration * 60000;
                         return slotStartMs < aEnd && slotEndMs > aStart;
                     });
                     const booked = !!overlap;
-                    const bg     = booked
+                    const bg     = isExpired ? '#f3f4f6'
+                        : booked
                         ? (overlap.status === 'confirmed' ? '#fee2e2'
                             : overlap.status === 'completed' ? '#f3f4f6' : '#fef3c7')
                         : '#f0fdf4';
-                    const border = booked
+                    const border = isExpired ? '#d1d5db'
+                        : booked
                         ? (overlap.status === 'confirmed' ? '#ef4444'
                             : overlap.status === 'completed' ? '#9ca3af' : '#f59e0b')
                         : '#22c55e';
-                    const color  = booked ? '#7f1d1d' : '#14532d';
+                    const color  = isExpired ? '#9ca3af' : (booked ? '#7f1d1d' : '#14532d');
 
                     return (
                         <div
@@ -101,14 +122,22 @@ function DerivedSlotGrid({ appointments, date }) {
                                 justifyContent: 'center',
                                 gap: '2px',
                                 cursor: 'default',
+                                opacity: isExpired ? 0.55 : 1,
                                 transition: 'box-shadow 0.15s',
                             }}
-                            title={booked
+                            title={isExpired
+                                ? '⏰ Past slot — expired'
+                                : booked
                                 ? `🔒 ${overlap.type} — ${overlap.patientName}`
                                 : '✅ Available'}
                         >
                             <div style={{ fontWeight: 700, fontSize: '0.74rem', lineHeight: 1.2 }}>{formatSlot(hour, minute)}</div>
-                            {booked ? (
+                            {isExpired ? (
+                                <>
+                                    <div style={{ fontSize: '0.9rem' }}>⏰</div>
+                                    <div style={{ fontSize: '0.64rem', opacity: 0.85 }}>Expired</div>
+                                </>
+                            ) : booked ? (
                                 <>
                                     <div style={{ fontSize: '0.9rem' }}>🔒</div>
                                     <div style={{ fontSize: '0.64rem', opacity: 0.85, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '82px' }}>{overlap.type}</div>
@@ -129,6 +158,7 @@ function DerivedSlotGrid({ appointments, date }) {
         </div>
     );
 }
+
 
 export default function ScheduleTab({ user, showNotification, socketRef }) {
     const [appointments, setAppointments] = useState([]);

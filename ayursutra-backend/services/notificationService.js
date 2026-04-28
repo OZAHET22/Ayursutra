@@ -1,3 +1,7 @@
+/**
+ * notificationService.js — Email + In-App notifications
+ * SMS (Fast2SMS) and WhatsApp (Whapi) have been removed as they are not used.
+ */
 const nodemailer = require('nodemailer');
 const Notification = require('../models/Notification');
 
@@ -79,100 +83,6 @@ const sendEmail = async (to, subject, html) => {
     }
 };
 
-// Normalize phone to Whapi Cloud format: digits-only + @s.whatsapp.net
-const normalizeWhatsAppNumber = (phone) => {
-    if (!phone) return null;
-    // Strip all non-digit characters (spaces, dashes, +, parentheses)
-    let num = phone.replace(/\D/g, '');
-    // Remove whatsapp: prefix if present
-    if (num.startsWith('whatsapp')) num = num.replace('whatsapp', '');
-    // Indian number: 10 digits starting with 6-9 → prepend 91
-    if (/^[6-9]\d{9}$/.test(num)) num = `91${num}`;
-    // Whapi format: <countrycode+number>@s.whatsapp.net
-    return `${num}@s.whatsapp.net`;
-};
-
-// Send WhatsApp via Whapi Cloud (gate.whapi.cloud)
-const sendWhatsApp = async (to, message) => {
-    const apiUrl = process.env.WHAPI_API_URL || 'https://gate.whapi.cloud';
-    const token = process.env.WHAPI_TOKEN || '';
-    if (!token || token.startsWith('your')) {
-        console.log('[Notification] WhatsApp skipped — Whapi Cloud token not configured');
-        return false;
-    }
-    const normalized = normalizeWhatsAppNumber(to);
-    if (!normalized) {
-        console.log('[Notification] WhatsApp skipped — invalid phone number:', to);
-        return false;
-    }
-    try {
-        const res = await fetch(`${apiUrl}/messages/text`, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ to: normalized, body: message }),
-        });
-        const data = await res.json();
-        if (res.ok) {
-            console.log(`[Notification] ✅ WhatsApp sent to ${normalized} | ID: ${data.sent?.[0]?.id || 'ok'}`);
-            return true;
-        } else {
-            console.error(`[Notification] ❌ Whapi error to ${normalized}:`, JSON.stringify(data));
-            return false;
-        }
-    } catch (err) {
-        console.error(`[Notification] ❌ WhatsApp error to ${normalized}:`, err.message);
-        return false;
-    }
-};
-
-// Send SMS via Fast2SMS (India)
-const sendSMS = async (to, message) => {
-    const apiKey = process.env.FAST2SMS_API_KEY || '';
-    if (!apiKey || apiKey.startsWith('your')) {
-        console.log('[Notification] SMS skipped — Fast2SMS API key not configured');
-        return false;
-    }
-    // Get 10-digit Indian mobile number
-    let num = to.replace(/\D/g, '');
-    if (num.startsWith('91') && num.length === 12) num = num.slice(2);
-    if (!/^[6-9]\d{9}$/.test(num)) {
-        console.log('[Notification] SMS skipped — invalid Indian mobile number:', to);
-        return false;
-    }
-    // Strip WhatsApp markdown bold (*text*) — SMS is plain text only
-    const plainText = message.replace(/\*([^*]+)\*/g, '$1');
-    try {
-        const res = await fetch('https://www.fast2sms.com/dev/bulkV2', {
-            method: 'POST',
-            headers: {
-                'authorization': apiKey,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                route: 'q',
-                message: plainText,
-                language: 'english',
-                flash: 0,
-                numbers: num,
-            }),
-        });
-        const data = await res.json();
-        if (data.return === true) {
-            console.log(`[Notification] ✅ SMS sent to ${num} | request_id: ${data.request_id}`);
-            return true;
-        } else {
-            console.error(`[Notification] ❌ SMS error to ${num}:`, JSON.stringify(data));
-            return false;
-        }
-    } catch (err) {
-        console.error(`[Notification] ❌ SMS error to ${num}:`, err.message);
-        return false;
-    }
-};
-
 // Create an in-app notification in DB
 const createInApp = async (userId, appointmentId, type, title, message, therapyType = '') => {
     try {
@@ -199,8 +109,8 @@ const emitToUser = (io, userId, event, data) => {
     if (io) io.to(`user_${userId}`).emit(event, data);
 };
 
-// Build full notification (in-app + optional email/WhatsApp)
-const sendNotification = async (io, { userId, appointmentId, type, title, message, therapyType, channels, email, phone }) => {
+// Build full notification (in-app + optional email)
+const sendNotification = async (io, { userId, appointmentId, type, title, message, therapyType, channels, email }) => {
     const results = {};
 
     // Always create in-app
@@ -233,61 +143,12 @@ const sendNotification = async (io, { userId, appointmentId, type, title, messag
         }
     }
 
-    // WhatsApp
-    if (channels && channels.includes('whatsapp')) {
-        if (!phone) {
-            console.log('[Notification] WhatsApp skipped — no phone number for user', userId);
-        } else {
-            const body = `🌿 *Ayursutra*\n*${title}*\n\n${message}`;
-            results.whatsapp = await sendWhatsApp(phone, body);
-            await Notification.create({
-                userId, appointmentId, type, channel: 'whatsapp', title, message, therapyType,
-                status: results.whatsapp ? 'sent' : 'failed',
-                sentAt: results.whatsapp ? new Date() : null,
-            });
-        }
-    }
-
-    // SMS
-    if (channels && channels.includes('sms')) {
-        if (!phone) {
-            console.log('[Notification] SMS skipped — no phone number for user', userId);
-        } else {
-            const smsBody = `Ayursutra: ${title}\n\n${message}`;
-            results.sms = await sendSMS(phone, smsBody);
-            await Notification.create({
-                userId, appointmentId, type, channel: 'sms', title, message, therapyType,
-                status: results.sms ? 'sent' : 'failed',
-                sentAt: results.sms ? new Date() : null,
-            });
-        }
-    }
-
     return results;
 };
 
-// ─── Startup: Verify Whapi Cloud connection ───────────────────────────────────
+// No-op stub kept for backward compat (called from server.js on startup)
 const verifyWhatsAppConnection = async () => {
-    const apiUrl = process.env.WHAPI_API_URL || 'https://gate.whapi.cloud';
-    const token = process.env.WHAPI_TOKEN || '';
-    if (!token || token.startsWith('your')) {
-        console.log('[WhatsApp] ⚠️  Whapi token not set — WhatsApp notifications disabled');
-        return;
-    }
-    try {
-        const res = await fetch(`${apiUrl}/health`, {
-            method: 'GET',
-            headers: { 'Authorization': `Bearer ${token}` },
-        });
-        const data = await res.json();
-        if (res.ok) {
-            console.log(`[WhatsApp] ✅ Whapi Cloud connected — status: ${data.status || 'ok'} | channel: ${data.instance_id || data.phone || '—'}`);
-        } else {
-            console.warn(`[WhatsApp] ⚠️  Whapi responded with ${res.status}:`, JSON.stringify(data));
-        }
-    } catch (err) {
-        console.error('[WhatsApp] ❌ Could not reach Whapi Cloud:', err.message);
-    }
+    console.log('[WhatsApp] WhatsApp notifications disabled — not configured for this project.');
 };
 
-module.exports = { sendNotification, createInApp, sendEmail, sendWhatsApp, sendSMS, verifyWhatsAppConnection, emitToUser, getTemplate, THERAPY_TEMPLATES };
+module.exports = { sendNotification, createInApp, sendEmail, verifyWhatsAppConnection, emitToUser, getTemplate, THERAPY_TEMPLATES };

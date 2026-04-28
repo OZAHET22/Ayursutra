@@ -61,8 +61,13 @@ export const getProgressData = async (therapyId) => {
 
 // Doctor: fetch all slots for a therapy
 export const getTherapySlots = async (therapyId) => {
-    const res = await API.get(`/tracking/therapy-slots/${therapyId}`);
-    return res.data.data;
+    try {
+        const res = await API.get(`/tracking/therapy-slots/${therapyId}`);
+        return Array.isArray(res.data?.data) ? res.data.data : [];
+    } catch (err) {
+        console.warn('[trackingService] getTherapySlots failed:', err.response?.data?.message || err.message);
+        return [];
+    }
 };
 
 // Doctor: save/replace all slots for a therapy

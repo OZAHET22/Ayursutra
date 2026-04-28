@@ -1,11 +1,6 @@
 import { useState, useEffect } from 'react';
 import { getDoctors, getCentres, reassignDoctor } from '../services/userService';
 
-const SLOT_COLORS = {
-    active: { bg: '#e8f5e9', border: '#66bb6a', text: '#2a7d2e' },
-    warning: { bg: '#fff3e0', border: '#ffb74d', text: '#e65100' },
-};
-
 export default function ChangeDoctorModal({ user, onClose, onSuccess, showNotification }) {
     const [step, setStep] = useState(1); // 1=select, 2=confirm
     const [centres, setCentres] = useState([]);
@@ -53,7 +48,7 @@ export default function ChangeDoctorModal({ user, onClose, onSuccess, showNotifi
                 reason: reason || 'Patient requested a change of doctor/centre.',
             });
             showNotification(result.message || 'Doctor changed successfully!', 'success');
-            onSuccess(result); // parent updates user context
+            onSuccess(result);
             onClose();
         } catch (err) {
             setError(err.response?.data?.message || 'Failed to change doctor. Please try again.');
@@ -68,7 +63,7 @@ export default function ChangeDoctorModal({ user, onClose, onSuccess, showNotifi
     };
     const cardStyle = {
         background: '#fff', borderRadius: '20px', padding: '2rem',
-        width: '100%', maxWidth: '560px', boxShadow: '0 24px 60px rgba(0,0,0,0.18)',
+        width: '100%', maxWidth: '580px', boxShadow: '0 24px 60px rgba(0,0,0,0.18)',
         maxHeight: '90vh', overflowY: 'auto',
     };
 
@@ -79,7 +74,7 @@ export default function ChangeDoctorModal({ user, onClose, onSuccess, showNotifi
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
                     <div>
                         <h3 style={{ margin: 0, fontSize: '1.2rem', color: '#1a1a2e', fontWeight: 700 }}>
-                            🔄 Change Centre & Doctor
+                            🔄 Change Centre &amp; Doctor
                         </h3>
                         <p style={{ margin: '4px 0 0', color: '#888', fontSize: '0.85rem' }}>
                             You can switch your assigned centre and doctor at any time.
@@ -104,7 +99,7 @@ export default function ChangeDoctorModal({ user, onClose, onSuccess, showNotifi
 
                 {/* Warning */}
                 <div style={{ background: '#fff8e1', borderRadius: '10px', padding: '0.75rem 1rem', marginBottom: '1.5rem', border: '1px solid #ffe082', fontSize: '0.83rem', color: '#e65100' }}>
-                    ⚠️ <strong>Important:</strong> Switching your doctor will <strong>cancel all pending & upcoming appointments</strong> with your current doctor. Completed sessions are preserved.
+                    ⚠️ <strong>Important:</strong> Switching your doctor will <strong>cancel all pending &amp; upcoming appointments</strong> with your current doctor. Completed sessions are preserved.
                 </div>
 
                 {loading ? (
@@ -128,7 +123,7 @@ export default function ChangeDoctorModal({ user, onClose, onSuccess, showNotifi
                                     const c = centres.find(c => c._id === e.target.value);
                                     setSelectedCentreId(e.target.value);
                                     setSelectedCentreName(c?.name || '');
-                                    setSelectedDoctorId(''); // reset doctor on centre change
+                                    setSelectedDoctorId('');
                                 }}
                                 style={{ width: '100%', padding: '0.7rem', borderRadius: '10px', border: '1.5px solid #ddd', fontSize: '0.9rem', outline: 'none' }}
                             >
@@ -149,33 +144,109 @@ export default function ChangeDoctorModal({ user, onClose, onSuccess, showNotifi
                                     No approved doctors found for this centre.
                                 </div>
                             ) : (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', maxHeight: '240px', overflowY: 'auto' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', maxHeight: '300px', overflowY: 'auto', paddingRight: '2px' }}>
                                     {filteredDoctors.map(d => {
                                         const isCurrent = user.preferredDoctor === d._id;
                                         const isSelected = selectedDoctorId === d._id;
+                                        const avgR = d.avgRating || 0;
+                                        const fullS = Math.floor(avgR);
+                                        const halfS = avgR - fullS >= 0.5;
                                         return (
                                             <div key={d._id}
                                                 onClick={() => setSelectedDoctorId(isSelected ? '' : d._id)}
                                                 style={{
-                                                    display: 'flex', alignItems: 'center', gap: '1rem',
-                                                    padding: '0.75rem 1rem', borderRadius: '12px', cursor: 'pointer',
+                                                    display: 'flex', alignItems: 'flex-start', gap: '0.85rem',
+                                                    padding: '0.85rem 1rem', borderRadius: '12px', cursor: 'pointer',
                                                     border: `2px solid ${isSelected ? '#2a7d2e' : isCurrent ? '#ffb74d' : '#e8e8e8'}`,
-                                                    background: isSelected ? '#e8f5e9' : isCurrent ? '#fff8e1' : '#fafafa',
+                                                    background: isSelected ? 'linear-gradient(135deg,#e8f5e9,#f0fdf4)' : isCurrent ? '#fff8e1' : '#fafafa',
                                                     transition: 'all 0.2s',
-                                                    boxShadow: isSelected ? '0 0 0 3px #c8e6c920' : 'none',
+                                                    boxShadow: isSelected ? '0 4px 12px rgba(42,125,46,0.12)' : 'none',
                                                 }}
                                             >
-                                                <div style={{ width: '42px', height: '42px', borderRadius: '50%', background: isSelected ? '#a5d6a7' : '#e0e0e0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem', flexShrink: 0 }}>
-                                                    👨‍⚕️
+                                                {/* Avatar */}
+                                                <div style={{
+                                                    width: '44px', height: '44px', borderRadius: '50%', flexShrink: 0,
+                                                    background: isSelected ? '#a5d6a7' : isCurrent ? '#ffe082' : '#e0e0e0',
+                                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                    fontSize: '1.4rem', border: '2px solid',
+                                                    borderColor: isSelected ? '#4ade80' : isCurrent ? '#f59e0b' : '#d1d5db',
+                                                }}>
+                                                    {d.avatar || '👨‍⚕️'}
                                                 </div>
-                                                <div style={{ flex: 1 }}>
-                                                    <div style={{ fontWeight: 700, fontSize: '0.92rem', color: isSelected ? '#2a7d2e' : '#222' }}>
-                                                        Dr. {d.name}
-                                                        {isCurrent && <span style={{ marginLeft: '6px', fontSize: '0.72rem', background: '#fff3e0', color: '#e65100', padding: '2px 7px', borderRadius: '10px' }}>Current</span>}
-                                                        {isSelected && !isCurrent && <span style={{ marginLeft: '6px', fontSize: '0.72rem', background: '#e8f5e9', color: '#2a7d2e', padding: '2px 7px', borderRadius: '10px' }}>Selected ✓</span>}
+
+                                                {/* Info */}
+                                                <div style={{ flex: 1, minWidth: 0 }}>
+                                                    {/* Name + badges */}
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                                        <span style={{ fontWeight: 700, fontSize: '0.93rem', color: isSelected ? '#2a7d2e' : '#222' }}>
+                                                            Dr. {d.name}
+                                                        </span>
+                                                        {isCurrent && (
+                                                            <span style={{ fontSize: '0.68rem', background: '#fff3e0', color: '#e65100', padding: '2px 7px', borderRadius: '10px', fontWeight: 600 }}>
+                                                                Current
+                                                            </span>
+                                                        )}
+                                                        {isSelected && !isCurrent && (
+                                                            <span style={{ fontSize: '0.68rem', background: '#e8f5e9', color: '#2a7d2e', padding: '2px 7px', borderRadius: '10px', fontWeight: 700 }}>
+                                                                ✓ Selected
+                                                            </span>
+                                                        )}
                                                     </div>
-                                                    <div style={{ fontSize: '0.8rem', color: '#777', marginTop: '2px' }}>
-                                                        {d.speciality || 'Ayurveda'} {d.centre ? `· ${d.centre}` : ''}
+
+                                                    {/* Speciality */}
+                                                    <div style={{ fontSize: '0.78rem', color: '#2a7d2e', fontWeight: 600, marginTop: '2px' }}>
+                                                        🌿 {d.speciality || 'Ayurveda'}{d.centre ? ` · ${d.centre}` : ''}
+                                                    </div>
+
+                                                    {/* Hospital */}
+                                                    {d.hospitalName && (
+                                                        <div style={{ fontSize: '0.73rem', color: '#555', marginTop: '2px' }}>
+                                                            🏥 {d.hospitalName}
+                                                        </div>
+                                                    )}
+
+                                                    {/* Experience */}
+                                                    {d.experience && (
+                                                        <div style={{ fontSize: '0.73rem', color: '#777', marginTop: '2px' }}>
+                                                            💼 {d.experience} yr{parseInt(d.experience) !== 1 ? 's' : ''} experience
+                                                        </div>
+                                                    )}
+
+                                                    {/* Rating + fee row */}
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '5px', flexWrap: 'wrap' }}>
+                                                        {(d.reviewCount || 0) > 0 ? (
+                                                            <>
+                                                                <span style={{ display: 'inline-flex', gap: '1px' }}>
+                                                                    {[1,2,3,4,5].map(i => (
+                                                                        <span key={i} style={{
+                                                                            fontSize: '0.8rem',
+                                                                            color: i <= fullS ? '#f59e0b' : (i === fullS + 1 && halfS) ? '#f59e0b' : '#d1d5db',
+                                                                            opacity: (i === fullS + 1 && halfS) ? 0.55 : 1,
+                                                                        }}>★</span>
+                                                                    ))}
+                                                                </span>
+                                                                <span style={{ fontSize: '0.73rem', fontWeight: 700, color: '#92400e' }}>
+                                                                    {avgR.toFixed(1)}
+                                                                </span>
+                                                                <span style={{ fontSize: '0.68rem', color: '#aaa' }}>
+                                                                    ({d.reviewCount} review{d.reviewCount !== 1 ? 's' : ''})
+                                                                </span>
+                                                            </>
+                                                        ) : (
+                                                            <span style={{ fontSize: '0.68rem', color: '#bbb', fontStyle: 'italic' }}>
+                                                                No reviews yet
+                                                            </span>
+                                                        )}
+                                                        {(d.consultationFee || 0) > 0 && (
+                                                            <span style={{
+                                                                fontSize: '0.68rem', fontWeight: 700,
+                                                                color: '#15803d', background: '#f0fdf4',
+                                                                borderRadius: '8px', padding: '1px 6px',
+                                                                border: '1px solid #bbf7d0',
+                                                            }}>
+                                                                ₹{d.consultationFee}/session
+                                                            </span>
+                                                        )}
                                                     </div>
                                                 </div>
                                             </div>
@@ -225,7 +296,7 @@ export default function ChangeDoctorModal({ user, onClose, onSuccess, showNotifi
                                     fontSize: '0.9rem', transition: 'all 0.2s',
                                 }}
                             >
-                                Review & Confirm →
+                                Review &amp; Confirm →
                             </button>
                         </div>
                     </>
@@ -237,10 +308,40 @@ export default function ChangeDoctorModal({ user, onClose, onSuccess, showNotifi
                             <div style={{ fontWeight: 700, fontSize: '1.05rem', color: '#2a7d2e', marginBottom: '0.4rem' }}>
                                 Switch to Dr. {selectedDoctor?.name}?
                             </div>
+                            {selectedDoctor?.hospitalName && (
+                                <div style={{ fontSize: '0.82rem', color: '#555', marginBottom: '2px' }}>
+                                    🏥 {selectedDoctor.hospitalName}
+                                </div>
+                            )}
                             <div style={{ color: '#666', fontSize: '0.85rem' }}>
-                                {selectedCentreName && <span>🏥 {selectedCentreName} · </span>}
+                                {selectedCentreName && <span>🏛️ {selectedCentreName} · </span>}
                                 {selectedDoctor?.speciality || 'Ayurveda'}
+                                {selectedDoctor?.experience && <span> · {selectedDoctor.experience} yrs exp</span>}
                             </div>
+                            {/* Rating in confirm step */}
+                            {(selectedDoctor?.reviewCount || 0) > 0 && (
+                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', marginTop: '8px', background: '#fffbeb', borderRadius: '20px', padding: '4px 12px', border: '1px solid #fde68a' }}>
+                                    <span style={{ display: 'inline-flex', gap: '1px' }}>
+                                        {[1,2,3,4,5].map(i => {
+                                            const fullS = Math.floor(selectedDoctor.avgRating || 0);
+                                            const halfS = (selectedDoctor.avgRating || 0) - fullS >= 0.5;
+                                            return (
+                                                <span key={i} style={{
+                                                    fontSize: '0.85rem',
+                                                    color: i <= fullS ? '#f59e0b' : (i === fullS + 1 && halfS) ? '#f59e0b' : '#d1d5db',
+                                                    opacity: (i === fullS + 1 && halfS) ? 0.55 : 1,
+                                                }}>★</span>
+                                            );
+                                        })}
+                                    </span>
+                                    <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#92400e' }}>
+                                        {(selectedDoctor.avgRating || 0).toFixed(1)}
+                                    </span>
+                                    <span style={{ fontSize: '0.73rem', color: '#a16207' }}>
+                                        ({selectedDoctor.reviewCount} review{selectedDoctor.reviewCount !== 1 ? 's' : ''})
+                                    </span>
+                                </div>
+                            )}
                         </div>
 
                         <div style={{ background: '#fff8e1', borderRadius: '10px', padding: '0.9rem 1.1rem', marginBottom: '1.5rem', fontSize: '0.84rem', color: '#e65100', border: '1px solid #ffcc80' }}>
@@ -248,7 +349,7 @@ export default function ChangeDoctorModal({ user, onClose, onSuccess, showNotifi
                             <ul style={{ margin: '0.4rem 0 0 1rem', padding: 0 }}>
                                 <li>Assign you to <strong>Dr. {selectedDoctor?.name}</strong></li>
                                 {selectedCentreName && <li>Move your centre to <strong>{selectedCentreName}</strong></li>}
-                                <li>Cancel all <strong>pending & upcoming</strong> appointments with your previous doctor</li>
+                                <li>Cancel all <strong>pending &amp; upcoming</strong> appointments with your previous doctor</li>
                                 <li>Preserve all your completed sessions and therapy history</li>
                             </ul>
                         </div>

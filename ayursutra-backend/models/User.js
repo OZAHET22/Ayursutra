@@ -12,10 +12,11 @@ const UserSchema = new mongoose.Schema({
     speciality: { type: String, default: '' },
     licenseNumber: { type: String, default: '' },
     experience: { type: String, default: '' },
+    hospitalName: { type: String, default: '' }, // Doctor's affiliated hospital/clinic name
     centre: { type: String, default: '' },
     centreId: { type: String, default: '' },
     available: { type: Boolean, default: true },
-    approved: { type: Boolean, default: false }, // doctor must be approved by admin
+    approved: { type: Boolean, default: true }, // immediately visible; admin can revoke
     // Patient fields
     preferredDoctor: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     age: { type: Number, default: null },

@@ -36,6 +36,8 @@ const app = express();
 const server = http.createServer(app);
 
 // Socket.io setup
+// Build allowed origins: always include localhost + any FRONTEND_URL env var
+// Set FRONTEND_URL on Railway to your Vercel deployment URL (e.g. https://ayursutra.vercel.app)
 const allowedOrigins = [
     'http://localhost:5173',
     'http://localhost:5174',
@@ -43,6 +45,10 @@ const allowedOrigins = [
     'http://localhost:3000',
     'https://ayursutra-khaki.vercel.app',
 ];
+if (process.env.FRONTEND_URL) {
+    const urls = process.env.FRONTEND_URL.split(',').map(u => u.trim()).filter(Boolean);
+    urls.forEach(u => { if (!allowedOrigins.includes(u)) allowedOrigins.push(u); });
+}
 
 const io = new Server(server, {
     cors: {
@@ -110,18 +116,20 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/appointments', require('./routes/appointments'));
 app.use('/api/therapies', require('./routes/therapies'));
-app.use('/api/invoices', require('./routes/invoices'));
 app.use('/api/feedback', require('./routes/feedback'));
 app.use('/api/documents', require('./routes/documents'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/tracking', require('./routes/therapyTracking'));
 app.use('/api/analytics', require('./routes/analytics'));
 app.use('/api/diets', require('./routes/diets'));
+app.use('/api/prescriptions', require('./routes/prescriptions'));
 app.use('/api/stats', require('./routes/stats'));
 app.use('/api/centres', require('./routes/centres'));
 app.use('/api/otp',       require('./routes/otp'));
 app.use('/api/catalogue', require('./routes/catalogue'));
-app.use('/api/blocks',    require('./routes/blocks'));
+app.use('/api/blocks',           require('./routes/blocks'));
+app.use('/api/doctor-schedule', require('./routes/doctorSchedule'));
+app.use('/api/invoices',         require('./routes/invoices'));
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -234,13 +242,132 @@ const startCronScheduler = () => {
             );
             if (missedResult.modifiedCount > 0) {
                 console.log(`[Cron] Auto-missed ${missedResult.modifiedCount} stale appointment(s)`);
+                // Notify affected clients in real-time so dashboards update instantly
+                try {
+                    const missedAppts = await Appointment.find({
+                        status: 'missed',
+                        $expr: {
+                            $lt: [
+                                { $add: [{ $toLong: '$date' }, { $multiply: ['$duration', 60000] }] },
+                                missGracePeriod.getTime(),
+                            ],
+                        },
+                    }).select('_id patientId doctorId type date patientName').limit(50);
+                    
+                    for (const ma of missedAppts) {
+                        const payload = { appointmentId: ma._id, status: 'missed', type: ma.type, date: ma.date };
+                        
+                        try {
+                            // Broadcast status change to both users
+                            io.to(`user_${ma.patientId}`).emit('appointment_status_changed', payload);
+                            io.to(`user_${ma.doctorId}`).emit('appointment_status_changed', payload);
+                            
+                            // CRITICAL FIX: Send notifications with improved error handling
+                            // Attempt to notify patient
+                            try {
+                                await notifyPatient({
+                                    io,
+                                    patientId: ma.patientId,
+                                    type: 'warning',
+                                    title: '⚠️ Appointment Marked as Missed',
+                                    message: `Your ${ma.type} appointment on ${new Date(ma.date).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })} has been automatically marked as missed because you did not attend.`,
+                                    appointmentId: ma._id,
+                                    therapyType: ma.type,
+                                });
+                            } catch (patientNotifErr) {
+                                console.error(`[Cron] Failed to notify patient ${ma.patientId} of missed appointment:`, patientNotifErr.message);
+                            }
+                            
+                            // Attempt to notify doctor
+                            try {
+                                await notifyPatient({
+                                    io,
+                                    patientId: ma.doctorId,
+                                    type: 'warning',
+                                    title: '⚠️ Appointment Marked as Missed',
+                                    message: `${ma.patientName}'s ${ma.type} appointment on ${new Date(ma.date).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })} has been automatically marked as missed (no-show).`,
+                                    appointmentId: ma._id,
+                                    therapyType: ma.type,
+                                });
+                            } catch (doctorNotifErr) {
+                                console.error(`[Cron] Failed to notify doctor ${ma.doctorId} of missed appointment:`, doctorNotifErr.message);
+                            }
+                        } catch (appointmentErr) {
+                            console.error(`[Cron] Error processing auto-missed appointment ${ma._id}:`, appointmentErr.message);
+                        }
+                    }
+                } catch (emitErr) {
+                    console.error('[Cron] Error fetching missed appointments:', emitErr.message);
+                }
             }
         } catch (err) {
             console.error('[Cron] Scheduler error:', err.message);
         }
     });
 
+    // ── INVOICE OVERDUE CRON: runs every hour ────────────────────────────────
+    const Invoice = require('./models/Invoice');
+    cron.schedule('0 * * * *', async () => {
+        try {
+            const now = new Date();
+            // Find invoices past due date, still in actionable statuses, overdue not yet set
+            const overdueInvoices = await Invoice.find({
+                dueDate: { $lt: now },
+                status: { $in: ['Sent', 'Unpaid', 'Partial'] },
+                overdueNotificationSent: { $ne: true },
+            });
+
+            for (const inv of overdueInvoices) {
+                inv.status = 'Overdue';
+                inv.overdueNotificationSent = true;
+                await inv.save();
+
+                // Emit socket event
+                io.to(`user_${inv.doctorId}`).emit('invoice_updated', {
+                    invoiceId: inv._id,
+                    invoiceNumber: inv.invoiceNumber,
+                    status: 'Overdue',
+                    patientId: inv.patientId,
+                    doctorId: inv.doctorId,
+                });
+
+                // Notify patient (registered only)
+                const mongoose = require('mongoose');
+                if (inv.isRegisteredPatient && mongoose.Types.ObjectId.isValid(inv.patientId)) {
+                    io.to(`user_${inv.patientId}`).emit('invoice_updated', {
+                        invoiceId: inv._id,
+                        invoiceNumber: inv.invoiceNumber,
+                        status: 'Overdue',
+                        patientId: inv.patientId,
+                        doctorId: inv.doctorId,
+                    });
+                    try {
+                        const { notifyPatient } = require('./utils/notifyPatient');
+                        await notifyPatient({
+                            io,
+                            patientId: inv.patientId,
+                            type: 'warning',
+                            title: `⚠️ Invoice Overdue: ${inv.invoiceNumber}`,
+                            message: `Your invoice ${inv.invoiceNumber} from Dr. ${inv.doctorName} is overdue. Balance due: ₹${inv.balance.toLocaleString('en-IN')}.`,
+                        });
+                    } catch (notifErr) {
+                        console.error('[Invoice Cron] Notify error:', notifErr.message);
+                    }
+                }
+
+                console.log(`[Invoice Cron] Marked overdue: ${inv.invoiceNumber}`);
+            }
+
+            if (overdueInvoices.length > 0) {
+                console.log(`[Invoice Cron] Processed ${overdueInvoices.length} overdue invoice(s)`);
+            }
+        } catch (err) {
+            console.error('[Invoice Cron] Error:', err.message);
+        }
+    });
+
     console.log('✅ Notification cron scheduler started (runs every minute)');
+    console.log('✅ Invoice overdue cron started (runs every hour)');
 };
 
 const PORT = process.env.PORT || 5000;

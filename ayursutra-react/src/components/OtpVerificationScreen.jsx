@@ -8,6 +8,7 @@ function OtpInput({ label, target, type, disabled, onVerified, purpose }) {
     const [localError, setLocalError] = useState('');
     const [success, setSuccess] = useState(false);
     const [attemptsLeft, setAttemptsLeft] = useState(5);
+    const attemptsLeftRef = useRef(5); // ref to avoid stale closure in doVerify
     const [localLoading, setLocalLoading] = useState(false);
     const inputRefs = useRef([]);
 
@@ -55,7 +56,11 @@ function OtpInput({ label, target, type, disabled, onVerified, purpose }) {
                 setLocalError(msg?.message || 'Locked out due to too many attempts.');
                 setDigits(['', '', '', '', '', '']);
             } else if (msg?.code === 'INVALID') {
-                const left = typeof msg.attemptsRemaining === 'number' ? msg.attemptsRemaining : attemptsLeft - 1;
+                // Use server-reported remaining or decrement local ref — avoids stale closure
+                const left = typeof msg.attemptsRemaining === 'number'
+                    ? msg.attemptsRemaining
+                    : Math.max(0, attemptsLeftRef.current - 1);
+                attemptsLeftRef.current = left;
                 setAttemptsLeft(left);
                 setLocalError(`Incorrect code. ${left} attempt(s) left.`);
                 setDigits(['', '', '', '', '', '']);
@@ -72,7 +77,7 @@ function OtpInput({ label, target, type, disabled, onVerified, purpose }) {
         } finally {
             setLocalLoading(false);
         }
-    }, [digits, target, type, purpose, onVerified, attemptsLeft]);
+    }, [digits, target, type, purpose, onVerified]);
 
     // Auto-trigger verify when all 6 digits filled
     useEffect(() => {
@@ -150,17 +155,23 @@ function OtpInput({ label, target, type, disabled, onVerified, purpose }) {
     );
 }
 
-export default function OtpVerificationScreen({ email, purpose, onVerified, onBack }) {
+export default function OtpVerificationScreen({ email, purpose, onVerified, onBack, devCodeEmail }) {
     const [loading, setLoading] = useState(false);
     const [resendCooldown, setResendCooldown] = useState(RESEND_COOLDOWN);
     const [resending, setResending] = useState(false);
     const [globalError, setGlobalError] = useState('');
     const [emailVerified, setEmailVerified] = useState(false);
+    const successTimerRef = useRef(null); // cleanup on unmount
 
     const triggerSuccess = useCallback(() => {
         setLoading(true);
-        setTimeout(() => onVerified(), 800);
+        successTimerRef.current = setTimeout(() => onVerified(), 800);
     }, [onVerified]);
+
+    // Cleanup timer on unmount to avoid setState on unmounted component
+    useEffect(() => {
+        return () => { if (successTimerRef.current) clearTimeout(successTimerRef.current); };
+    }, []);
 
     useEffect(() => {
         if (emailVerified) triggerSuccess();
@@ -240,6 +251,20 @@ export default function OtpVerificationScreen({ email, purpose, onVerified, onBa
                         }}
                     >
                         ❌ {globalError}
+                    </div>
+                )}
+
+                {/* Dev-mode hint: show OTP code only when devCodeEmail prop is provided */}
+                {devCodeEmail && (
+                    <div
+                        style={{
+                            background: '#fffbeb', border: '1px solid #fcd34d',
+                            borderRadius: '8px', padding: '8px 12px',
+                            fontSize: '0.8rem', marginBottom: '1rem', textAlign: 'center',
+                            color: '#92400e',
+                        }}
+                    >
+                        🛠️ <strong>Dev:</strong> OTP code is <strong style={{ letterSpacing: '0.15em', fontFamily: 'monospace' }}>{devCodeEmail}</strong>
                     </div>
                 )}
 

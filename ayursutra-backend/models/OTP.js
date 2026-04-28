@@ -10,8 +10,8 @@ const OTPSchema = new mongoose.Schema({
     expiresAt: { type: Date, required: true },
 }, { timestamps: true });
 
-// MongoDB auto-deletes documents 10 min after expiresAt
-OTPSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 600 });
+// MongoDB auto-deletes documents at expiresAt (expireAfterSeconds:0 = delete at the indexed date)
+OTPSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 // Fast lookup
 OTPSchema.index({ target: 1, targetType: 1, purpose: 1 });
 

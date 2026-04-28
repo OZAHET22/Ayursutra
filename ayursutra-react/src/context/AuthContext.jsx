@@ -17,12 +17,25 @@ export function AuthProvider({ children }) {
     const [user, setUser]     = useState(null);
     const [loading, setLoading] = useState(true);
 
-    // On app start: restore session from localStorage
+    // On app start: restore session from localStorage, then hydrate with fresh user data
     useEffect(() => {
         const storedUser  = authService.getStoredUser();
         const storedToken = authService.getStoredToken();
         if (storedUser && storedToken) {
-            setUser(storedUser);
+            setUser(storedUser); // render immediately from cache
+            // Then refresh from server to catch approval changes, new fields, etc.
+            authService.getMe()
+                .then(data => {
+                    if (data?.user) {
+                        const fresh = { ...storedUser, ...data.user, id: data.user._id || storedUser.id };
+                        authService.persistSession(fresh, storedToken);
+                        setUser(fresh);
+                    }
+                })
+                .catch(() => {
+                    // Token expired or network error — the axios interceptor
+                    // already clears localStorage and reloads on 401 "Token invalid"
+                });
         }
         setLoading(false);
     }, []);
@@ -85,10 +98,12 @@ export function AuthProvider({ children }) {
                 setUser(result.user);
                 return { success: true, role: result.user.role };
             }
-            return { success: false, message: result.message || 'Registration failed.' };
+            return { success: false, message: result.message || 'Registration failed.', code: result.code };
         } catch (err) {
-            const msg = err.response?.data?.message || 'Registration failed';
-            return { success: false, message: msg };
+            const errData = err.response?.data;
+            const msg = errData?.message || 'Registration failed';
+            const code = errData?.code;
+            return { success: false, message: msg, code };
         }
     };
 

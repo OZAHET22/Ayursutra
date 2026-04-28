@@ -69,6 +69,8 @@ export default function SlotPicker({
     const [loading, setLoading]     = useState(false);
     const [apiError, setApiError]   = useState('');
     const [lastRefresh, setLastRefresh] = useState(null);
+    // Real-time clock so past-slot highlighting updates without refetching
+    const [nowMs, setNowMs] = useState(Date.now());
     const fetchingRef = useRef(false);
 
     const fetchSlots = useCallback(async (quiet = false) => {
@@ -104,6 +106,19 @@ export default function SlotPicker({
 
     useEffect(() => { fetchSlots(); }, [fetchSlots]);
 
+    // Real-time clock: update nowMs every 30 s so past slots grey-out automatically
+    useEffect(() => {
+        const iv = setInterval(() => setNowMs(Date.now()), 30000);
+        return () => clearInterval(iv);
+    }, []);
+
+    // Auto-refresh slots every 60 seconds to stay in sync with server
+    useEffect(() => {
+        if (!doctorId || !date) return;
+        const iv = setInterval(() => fetchSlots(true), 60000);
+        return () => clearInterval(iv);
+    }, [fetchSlots, doctorId, date]);
+
     // Live socket refresh
     useEffect(() => {
         const socket = socketRef?.current;
@@ -127,6 +142,15 @@ export default function SlotPicker({
     };
 
     const handleClick = (slot) => {
+        if (apiError) {
+            alert('⚠️ Server unavailable. Cannot book at this time. Please try again in a moment.');
+            return;
+        }
+        // Prevent booking past or expired slots
+        if (slot.isPast || new Date(slot.time).getTime() <= nowMs) {
+            alert('⏰ This time slot has already passed and cannot be booked.');
+            return;
+        }
         if (readOnly || slot.booked) return;
         if (isSelected(slot)) {
             onSelect && onSelect(null);
@@ -154,9 +178,10 @@ export default function SlotPicker({
         );
     }
 
-    const freeCount    = slots.filter(s => !s.booked).length;
-    const bookedCount  = slots.filter(s => s.booked && !s.blocked).length;
+    const freeCount    = slots.filter(s => !s.booked && !s.isPast && new Date(s.time).getTime() > nowMs).length;
+    const bookedCount  = slots.filter(s => s.booked && !s.blocked && !s.isPast).length;
     const blockedCount = slots.filter(s => s.blocked).length;
+    const pastCount    = slots.filter(s => s.isPast || new Date(s.time).getTime() <= nowMs).length;
 
     return (
         <div style={styles.wrapper}>
@@ -174,7 +199,7 @@ export default function SlotPicker({
                 </div>
             )}
 
-            {/* ── Legend ── */}
+            {/* Legend */}
             <div style={styles.legend}>
                 <div style={styles.legendItem}>
                     <div style={{ ...styles.dot, background: '#22c55e' }} />
@@ -188,6 +213,12 @@ export default function SlotPicker({
                     <div style={styles.legendItem}>
                         <div style={{ ...styles.dot, background: '#f97316' }} />
                         <span style={{ fontWeight: 700 }}>Unavailable ({blockedCount})</span>
+                    </div>
+                )}
+                {pastCount > 0 && (
+                    <div style={styles.legendItem}>
+                        <div style={{ ...styles.dot, background: '#9ca3af' }} />
+                        <span>Expired ({pastCount})</span>
                     </div>
                 )}
                 {!readOnly && (
@@ -206,26 +237,32 @@ export default function SlotPicker({
                 </div>
             </div>
 
-            {/* ── 30-min Slot Grid — 2 columns per hour group ── */}
+            {/* Slot Grid */}
             <div style={styles.grid}>
                 {slots.map((slot) => {
+                    const slotTime  = new Date(slot.time).getTime();
+                    const isExpired = slot.isPast || slotTime <= nowMs;
                     const selected  = isSelected(slot);
                     const isBlocked = slot.blocked;
-                    const bg        = isBlocked ? '#fff7ed'
+
+                    const bg = isExpired
+                        ? '#f3f4f6'
+                        : isBlocked ? '#fff7ed'
                         : slot.booked
                         ? (slot.bookedStatus === 'confirmed'  ? '#fee2e2'
                          : slot.bookedStatus === 'completed'  ? '#f3f4f6' : '#fef3c7')
                         : selected ? '#dbeafe' : '#f0fdf4';
-                    const border    = isBlocked ? '#f97316'
+                    const border = isExpired
+                        ? '#d1d5db'
+                        : isBlocked ? '#f97316'
                         : slot.booked
                         ? (slot.bookedStatus === 'confirmed'  ? '#ef4444'
                          : slot.bookedStatus === 'completed'  ? '#9ca3af' : '#f59e0b')
                         : selected ? '#3b82f6' : '#22c55e';
-                    const textColor = isBlocked ? '#9a3412'
+                    const textColor = isExpired ? '#9ca3af'
+                        : isBlocked ? '#9a3412'
                         : slot.booked ? '#7f1d1d' : selected ? '#1e3a8a' : '#14532d';
-                    const cursor    = readOnly || slot.booked ? 'not-allowed' : 'pointer';
-
-                    // Half-hour indicator: show a thin left border tint for :30 slots
+                    const cursor = (readOnly || slot.booked || isExpired) ? 'not-allowed' : 'pointer';
                     const isHalfHour = slot.minute === 30;
 
                     return (
@@ -239,23 +276,25 @@ export default function SlotPicker({
                                 border:      `2px solid ${border}`,
                                 color:       textColor,
                                 cursor,
-                                opacity:     slot.booked && !readOnly ? 0.82 : 1,
+                                opacity:     isExpired ? 0.55 : (slot.booked && !readOnly ? 0.82 : 1),
                                 transform:   selected ? 'scale(1.04)' : 'scale(1)',
-                                boxShadow:   selected
-                                    ? `0 0 0 3px ${border}33`
-                                    : '0 1px 3px rgba(0,0,0,0.06)',
-                                borderLeft:  isHalfHour && !slot.booked && !selected
-                                    ? `3px solid ${border}88`
-                                    : undefined,
+                                boxShadow:   selected ? `0 0 0 3px ${border}33` : '0 1px 3px rgba(0,0,0,0.06)',
+                                borderLeft:  isHalfHour && !slot.booked && !selected && !isExpired
+                                    ? `3px solid ${border}88` : undefined,
                             }}
-                            title={isBlocked
-                                ? `🚫 ${slot.blockReason || 'Unavailable'}`
-                                : slot.booked
-                                ? `🔒 Locked: ${slot.bookedType} — ${slot.bookedBy}`
+                            title={isExpired
+                                ? '⏰ This slot has expired (past time)'
+                                : isBlocked ? `🚫 ${slot.blockReason || 'Unavailable'}`
+                                : slot.booked ? `🔒 Locked: ${slot.bookedType} — ${slot.bookedBy}`
                                 : '✅ Available — click to select'}
                         >
                             <div style={styles.slotTime}>{formatSlot(slot.hour, slot.minute)}</div>
-                            {isBlocked ? (
+                            {isExpired ? (
+                                <>
+                                    <div style={styles.slotIcon}>⏰</div>
+                                    <div style={styles.slotMeta}>Expired</div>
+                                </>
+                            ) : isBlocked ? (
                                 <>
                                     <div style={styles.slotIcon}>🚫</div>
                                     <div style={styles.slotMeta}>{slot.blockReason || 'Unavailable'}</div>

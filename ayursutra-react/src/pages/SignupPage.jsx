@@ -5,18 +5,20 @@ import { getCentres } from '../services/centreService';
 import { sendOTP, isDisposableEmail } from '../services/otpService';
 import { checkEmail } from '../services/authService';
 import OtpVerificationScreen from '../components/OtpVerificationScreen';
+import { SPECIALIZATIONS } from '../data/specializations';
 
 export default function SignupPage({ showPage, showNotification }) {
     const { register } = useAuth();
-    const [step, setStep] = useState(1); // 1=role, 2=centre, 3=patient:doctors/doctor:details, 4=form
+    const [step, setStep] = useState(1); // 1=role, 2=centre, 3=specialization(patient)/details(doctor), 4=doctor(patient)/form(doctor), 5=form(patient)
     const [userType, setUserType] = useState('');
     const [selectedCentre, setSelectedCentre] = useState('');
     const [selectedDoctor, setSelectedDoctor] = useState('');
+    const [selectedSpecialization, setSelectedSpecialization] = useState('');
     const [loading, setLoading] = useState(false);
     const [form, setForm] = useState({
         fullName: '', email: '', phone: '', password: '', confirmPassword: '',
         // doctor specific
-        speciality: '', licenseNumber: '', experience: '',
+        speciality: '', licenseNumber: '', experience: '', hospitalName: '',
         // patient specific
         dob: '', gender: '', address: ''
     });
@@ -37,7 +39,11 @@ export default function SignupPage({ showPage, showNotification }) {
         getCentres().then(c => setCentres(c || [])).catch(() => {});
     }, []);
 
-    const centreDoctors = availableDoctors.filter(d => d.centreId === selectedCentre || d.centre === selectedCentre);
+    // Filter doctors by centre AND specialization for patient matching (Feature 4)
+    const centreDoctors = availableDoctors.filter(d =>
+        (d.centreId === selectedCentre || d.centre === selectedCentre) &&
+        (!selectedSpecialization || d.speciality === selectedSpecialization)
+    );
 
     const calcStrength = (pass) => {
         let score = 0;
@@ -140,9 +146,10 @@ export default function SignupPage({ showPage, showNotification }) {
                 userType,
                 centre: selectedCentre,
                 centreId: selectedCentre,
-                speciality: form.speciality || '',
+                speciality: userType === 'doctor' ? (form.speciality || '') : (selectedSpecialization || ''),
                 licenseNumber: form.licenseNumber || '',
                 experience: form.experience || '',
+                hospitalName: form.hospitalName || '',
                 age: computedAge,
                 gender: form.gender || '',
                 condition: form.address || '',
@@ -171,9 +178,11 @@ export default function SignupPage({ showPage, showNotification }) {
                     userType,
                     centre: selectedCentre,
                     centreId: selectedCentre,
-                    speciality: form.speciality || '',
+                    // ✅ Match the success-path logic: patients use selectedSpecialization
+                    speciality: userType === 'doctor' ? (form.speciality || '') : (selectedSpecialization || ''),
                     licenseNumber: form.licenseNumber || '',
                     experience: form.experience || '',
+                    hospitalName: form.hospitalName || '',
                     age: computedAge,
                     gender: form.gender || '',
                     condition: form.address || '',
@@ -215,8 +224,25 @@ export default function SignupPage({ showPage, showNotification }) {
                 showNotification('Registration successful! Welcome to Ayursutra.', 'success');
             }
         } else {
-            showNotification(result.message || 'Registration failed. Please try again.', 'error');
-            setStage('form');
+            // Surface specific backend error codes with clear, actionable messages
+            const code = result.code;
+            if (code === 'EMAIL_NOT_VERIFIED') {
+                showNotification(
+                    '⚠️ Session expired. Please go back and verify your email again.',
+                    'error'
+                );
+                // Go back to OTP screen to allow re-send
+                setStage('form');
+            } else if (code === 'EMAIL_TAKEN') {
+                showNotification(
+                    '❌ This email is already registered. Please log in instead.',
+                    'error'
+                );
+                setStage('form');
+            } else {
+                showNotification(result.message || 'Registration failed. Please try again.', 'error');
+                setStage('form');
+            }
         }
     };
 
@@ -276,7 +302,7 @@ export default function SignupPage({ showPage, showNotification }) {
                             <span className="auth-logo-text">Ayursutra</span>
                         </div>
                         <div className="signup-progress">
-                            {[1, 2, 3, 4].map(s => (
+                            {(userType === 'patient' ? [1,2,3,4,5] : [1,2,3,4]).map(s => (
                                 <div key={s} className={`progress-step ${step >= s ? 'done' : ''} ${step === s ? 'active' : ''}`}>{s}</div>
                             ))}
                         </div>
@@ -342,37 +368,184 @@ export default function SignupPage({ showPage, showNotification }) {
                         </div>
                     )}
 
-                    {/* Step 3: Patient → Choose Doctor / Doctor → Speciality */}
+                    {/* Step 3: Patient → Choose Specialization (Feature 4) */}
                     {step === 3 && userType === 'patient' && (
+                        <div>
+                            <h2>Select Specialization</h2>
+                            <p style={{ color: '#777', marginBottom: '1.5rem' }}>Choose the type of care you need — only matching doctors will be shown</p>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem', marginBottom: '1.5rem' }}>
+                                {SPECIALIZATIONS.map(sp => (
+                                    <button
+                                        key={sp.id}
+                                        className={`centre-option ${selectedSpecialization === sp.label ? 'selected' : ''}`}
+                                        onClick={() => { setSelectedSpecialization(sp.label); setSelectedDoctor(''); }}
+                                        style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', textAlign: 'left', padding: '0.6rem 0.9rem' }}
+                                    >
+                                        <span style={{ fontSize: '1.4rem' }}>{sp.icon}</span>
+                                        <div>
+                                            <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>{sp.label}</div>
+                                            <div style={{ fontSize: '0.72rem', color: '#888' }}>{sp.desc}</div>
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+                            <div style={{ display: 'flex', gap: '1rem' }}>
+                                <button className="auth-btn-outline" onClick={() => setStep(2)}>← Back</button>
+                                <button className="auth-btn" disabled={!selectedSpecialization} onClick={() => setStep(4)}>Continue</button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Step 4: Patient → Choose Doctor (filtered by specialization) */}
+                    {step === 4 && userType === 'patient' && (
                         <div>
                             <h2>Choose Your Doctor</h2>
                             <p style={{ color: '#777', marginBottom: '1.5rem' }}>
-                                Select a doctor at <strong>{centres.find(c => (c.slug || c._id) === selectedCentre)?.name || selectedCentre}</strong>
+                                {selectedSpecialization} doctors at <strong>{centres.find(c => (c.slug || c._id) === selectedCentre)?.name || selectedCentre}</strong>
                             </p>
                             {centreDoctors.length === 0 ? (
-                                <p style={{ color: '#777', textAlign: 'center', padding: '2rem' }}>No approved doctors available at this centre yet.</p>
+                                <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '12px', padding: '1.5rem', textAlign: 'center', color: '#92400e', marginBottom: '1.5rem' }}>
+                                    <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>🔍</div>
+                                    <strong>No {selectedSpecialization} doctors available</strong> at this centre yet.
+                                    <br /><small style={{ color: '#a16207' }}>Try a different specialization or centre.</small>
+                                </div>
                             ) : (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.5rem' }}>
-                                    {centreDoctors.map(doc => (
-                                        <button
-                                            key={doc._id}
-                                            className={`doctor-option ${selectedDoctor === doc._id ? 'selected' : ''}`}
-                                            onClick={() => setSelectedDoctor(doc._id)}
-                                        >
-                                            <div style={{ fontSize: '2rem' }}>{doc.avatar || '👨‍⚕️'}</div>
-                                            <div style={{ flex: 1, textAlign: 'left' }}>
-                                                <div style={{ fontWeight: 600 }}>{doc.name}</div>
-                                                <div style={{ fontSize: '0.9rem', color: '#777' }}>{doc.speciality || 'Ayurveda'}</div>
-                                            </div>
-                                            <div style={{ color: '#4caf50', fontSize: '0.8rem', fontWeight: 600 }}>Available</div>
-                                        </button>
-                                    ))}
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', marginBottom: '1.5rem' }}>
+                                    {centreDoctors.map(doc => {
+                                        const isSelected = selectedDoctor === doc._id;
+                                        const stars = doc.avgRating || 0;
+                                        const fullStars = Math.floor(stars);
+                                        const halfStar = stars - fullStars >= 0.5;
+                                        return (
+                                            <button
+                                                key={doc._id}
+                                                onClick={() => setSelectedDoctor(doc._id)}
+                                                style={{
+                                                    display: 'flex',
+                                                    alignItems: 'flex-start',
+                                                    gap: '0.9rem',
+                                                    padding: '1rem 1.1rem',
+                                                    borderRadius: '14px',
+                                                    border: isSelected ? '2px solid #2a7d2e' : '2px solid #e8f5e9',
+                                                    background: isSelected ? 'linear-gradient(135deg, #f0fdf4, #dcfce7)' : '#fff',
+                                                    cursor: 'pointer',
+                                                    textAlign: 'left',
+                                                    transition: 'all 0.2s ease',
+                                                    boxShadow: isSelected ? '0 4px 12px rgba(42,125,46,0.15)' : '0 2px 6px rgba(0,0,0,0.05)',
+                                                    width: '100%',
+                                                    position: 'relative',
+                                                }}
+                                            >
+                                                {/* Avatar */}
+                                                <div style={{
+                                                    fontSize: '2.2rem',
+                                                    width: '48px',
+                                                    height: '48px',
+                                                    borderRadius: '50%',
+                                                    background: isSelected ? '#bbf7d0' : '#f0f9f0',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    flexShrink: 0,
+                                                    border: '2px solid',
+                                                    borderColor: isSelected ? '#4ade80' : '#d1fae5',
+                                                }}>
+                                                    {doc.avatar || '👨‍⚕️'}
+                                                </div>
+
+                                                {/* Info block */}
+                                                <div style={{ flex: 1, minWidth: 0 }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                                        <span style={{ fontWeight: 700, fontSize: '1rem', color: '#14532d' }}>
+                                                            Dr. {doc.name}
+                                                        </span>
+                                                        {isSelected && (
+                                                            <span style={{
+                                                                fontSize: '0.7rem', background: '#16a34a', color: '#fff',
+                                                                borderRadius: '20px', padding: '2px 8px', fontWeight: 700
+                                                            }}>✓ Selected</span>
+                                                        )}
+                                                    </div>
+
+                                                    {/* Speciality badge */}
+                                                    <div style={{ fontSize: '0.8rem', color: '#2a7d2e', fontWeight: 600, marginTop: '2px' }}>
+                                                        🌿 {doc.speciality || 'Ayurveda'}
+                                                    </div>
+
+                                                    {/* Hospital name */}
+                                                    {doc.hospitalName && (
+                                                        <div style={{ fontSize: '0.78rem', color: '#555', marginTop: '3px' }}>
+                                                            🏥 {doc.hospitalName}
+                                                        </div>
+                                                    )}
+
+                                                    {/* Experience */}
+                                                    {doc.experience && (
+                                                        <div style={{ fontSize: '0.78rem', color: '#777', marginTop: '2px' }}>
+                                                            💼 {doc.experience} yr{parseInt(doc.experience) !== 1 ? 's' : ''} experience
+                                                        </div>
+                                                    )}
+
+                                                    {/* Rating row */}
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '6px' }}>
+                                                        {doc.reviewCount > 0 ? (
+                                                            <>
+                                                                <div style={{ display: 'flex', gap: '1px' }}>
+                                                                    {[1,2,3,4,5].map(i => (
+                                                                        <span key={i} style={{
+                                                                            fontSize: '0.85rem',
+                                                                            color: i <= fullStars ? '#f59e0b'
+                                                                                : (i === fullStars + 1 && halfStar) ? '#f59e0b'
+                                                                                : '#d1d5db',
+                                                                            opacity: (i === fullStars + 1 && halfStar) ? 0.6 : 1
+                                                                        }}>★</span>
+                                                                    ))}
+                                                                </div>
+                                                                <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#92400e' }}>
+                                                                    {stars.toFixed(1)}
+                                                                </span>
+                                                                <span style={{ fontSize: '0.72rem', color: '#999' }}>
+                                                                    ({doc.reviewCount} review{doc.reviewCount !== 1 ? 's' : ''})
+                                                                </span>
+                                                            </>
+                                                        ) : (
+                                                            <span style={{ fontSize: '0.72rem', color: '#bbb', fontStyle: 'italic' }}>
+                                                                No reviews yet
+                                                            </span>
+                                                        )}
+                                                    </div>
+
+                                                    {/* Fee + availability row */}
+                                                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '5px', flexWrap: 'wrap' }}>
+                                                        {doc.consultationFee > 0 && (
+                                                            <span style={{
+                                                                fontSize: '0.75rem', fontWeight: 700,
+                                                                color: '#15803d', background: '#f0fdf4',
+                                                                borderRadius: '8px', padding: '2px 7px',
+                                                                border: '1px solid #bbf7d0'
+                                                            }}>
+                                                                ₹{doc.consultationFee} / session
+                                                            </span>
+                                                        )}
+                                                        <span style={{
+                                                            fontSize: '0.75rem', fontWeight: 600,
+                                                            color: '#16a34a', background: '#f0fdf4',
+                                                            borderRadius: '8px', padding: '2px 7px',
+                                                            border: '1px solid #bbf7d0'
+                                                        }}>
+                                                            ● Available
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </button>
+                                        );
+                                    })}
                                 </div>
                             )}
                             <div style={{ display: 'flex', gap: '1rem' }}>
-                                <button className="auth-btn-outline" onClick={() => setStep(2)}>← Back</button>
-                                <button className="auth-btn" onClick={() => setStep(4)}>
-                                    {selectedDoctor ? 'Book & Register' : 'Skip & Register'}
+                                <button className="auth-btn-outline" onClick={() => setStep(3)}>← Back</button>
+                                <button className="auth-btn" onClick={() => setStep(5)}>
+                                    {selectedDoctor ? 'Continue' : 'Skip & Continue'}
                                 </button>
                             </div>
                         </div>
@@ -383,19 +556,31 @@ export default function SignupPage({ showPage, showNotification }) {
                             <h2>Professional Details</h2>
                             <p style={{ color: '#777', marginBottom: '1rem' }}>You are registering at <strong>{centres.find(c => (c.slug || c._id) === selectedCentre)?.name || selectedCentre}</strong></p>
                             <div className="form-group">
-                                <label>Speciality</label>
-                                <select value={form.speciality} onChange={e => setForm({ ...form, speciality: e.target.value })}>
-                                    <option value="">Select Speciality</option>
-                                    <option>Panchakarma Specialist</option>
-                                    <option>Ayurvedic Physician</option>
-                                    <option>Detox Specialist</option>
-                                    <option>Stress Management</option>
-                                    <option>Joint Pain Specialist</option>
-                                    <option>Digestive Health</option>
-                                    <option>Ayurvedic Dermatology</option>
-                                    <option>Respiratory Health</option>
-                                    <option>Pain Management</option>
+                                <label>Specialization *</label>
+                                <select required value={form.speciality} onChange={e => setForm({ ...form, speciality: e.target.value })}>
+                                    <option value="">Select Specialization</option>
+                                    {SPECIALIZATIONS.map(sp => (
+                                        <option key={sp.id} value={sp.label}>{sp.icon} {sp.label}</option>
+                                    ))}
                                 </select>
+                                {form.speciality && (
+                                    <div style={{ marginTop: '6px', fontSize: '0.8rem', color: '#2a7d2e', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '6px', padding: '6px 10px' }}>
+                                        ✅ Patients searching for <strong>{form.speciality}</strong> will be matched with you.
+                                    </div>
+                                )}
+                            </div>
+                            <div className="form-group">
+                                <label>Hospital / Clinic Name *</label>
+                                <input
+                                    type="text"
+                                    placeholder="e.g. Apollo Hospital, City Ayurveda Clinic"
+                                    required
+                                    value={form.hospitalName}
+                                    onChange={e => setForm({ ...form, hospitalName: e.target.value })}
+                                />
+                                <small style={{ color: '#888', fontSize: '0.78rem' }}>
+                                    🏥 This is displayed to patients when they choose a doctor.
+                                </small>
                             </div>
                             <div className="form-group">
                                 <label>BAMS License Number</label>
@@ -407,13 +592,13 @@ export default function SignupPage({ showPage, showNotification }) {
                             </div>
                             <div style={{ display: 'flex', gap: '1rem' }}>
                                 <button className="auth-btn-outline" onClick={() => setStep(2)}>← Back</button>
-                                <button className="auth-btn" disabled={!form.speciality} onClick={() => setStep(4)}>Continue to Registration</button>
+                                <button className="auth-btn" disabled={!form.speciality || !form.hospitalName} onClick={() => setStep(4)}>Continue to Registration</button>
                             </div>
                         </div>
                     )}
 
-                    {/* Step 4: Fill Registration Form */}
-                    {step === 4 && (
+                    {/* Step 4 (Doctor) / Step 5 (Patient): Registration Form */}
+                    {((step === 4 && userType === 'doctor') || (step === 5 && userType === 'patient')) && (
                         <div>
                             <h2>{userType === 'patient' ? 'Patient' : 'Doctor'} Registration</h2>
                             <form onSubmit={handleSubmit}>
@@ -500,7 +685,7 @@ export default function SignupPage({ showPage, showNotification }) {
                                     <input type="password" placeholder="Repeat your password" required value={form.confirmPassword} onChange={e => setForm({ ...form, confirmPassword: e.target.value })} />
                                 </div>
                                 <div style={{ display: 'flex', gap: '1rem' }}>
-                                    <button type="button" className="auth-btn-outline" onClick={() => setStep(3)}>← Back</button>
+                                <button type="button" className="auth-btn-outline" onClick={() => setStep(userType === 'patient' ? 4 : 3)}>← Back</button>
                                     <button type="submit" className="auth-btn" disabled={loading}>
                                         {loading ? 'Registering...' : '✅ Create Account'}
                                     </button>

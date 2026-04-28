@@ -33,16 +33,37 @@ router.post('/check-email', async (req, res) => {
 });
 
 // POST /api/auth/register
+// Registration is allowed ONLY after email is verified via OTP
 router.post('/register', async (req, res) => {
     try {
-        let { name, email, password, role, phone, centre, centreId, speciality, licenseNumber, experience, age, gender, condition, preferredDoctor } = req.body;
+        let { name, email, password, role, phone, centre, centreId, speciality, licenseNumber, experience, hospitalName, age, gender, condition, preferredDoctor } = req.body;
         
+        const normalEmail = email.trim().toLowerCase();
+
+        // 0. CRITICAL: Verify that an OTP was recently verified for this email
+        // This ensures user actually owns the email before account creation.
+        // Window is 30 min to handle slow connections / retries gracefully.
+        const recentOTP = await OTP.findOne({ 
+            target: normalEmail, 
+            targetType: 'email',
+            purpose: 'register',
+            used: true,
+            createdAt: { $gte: new Date(Date.now() - 30 * 60 * 1000) } // OTP verified in last 30 mins
+        }).sort({ createdAt: -1 });
+
+        if (!recentOTP) {
+            return res.status(401).json({ 
+                success: false,
+                code: 'EMAIL_NOT_VERIFIED',
+                message: 'Email verification required. Please verify your email via OTP first.' 
+            });
+        }
+
         // 1. Validate Email (Catch disposable domains bypassing OTP flow with APIs)
-        const emailCheck = await validateEmail(email);
+        const emailCheck = await validateEmail(normalEmail);
         if (!emailCheck.success) {
             return res.status(400).json({ success: false, message: emailCheck.message });
         }
-        const normalEmail = email.trim().toLowerCase();
         
         const existing = await User.findOne({ email: normalEmail }).select('role');
         if (existing) {
@@ -73,6 +94,10 @@ router.post('/register', async (req, res) => {
             return res.status(400).json({ success: false, message: 'Name and password are required.' });
         }
 
+        if (password.length < 6) {
+            return res.status(400).json({ success: false, message: 'Password must be at least 6 characters.' });
+        }
+
         const user = await User.create({
             name, email: normalEmail, password,
             role: role || 'patient',
@@ -82,6 +107,7 @@ router.post('/register', async (req, res) => {
             speciality: speciality || '',
             licenseNumber: licenseNumber || '',
             experience: experience || '',
+            hospitalName: hospitalName || '',
             age: age || null,
             gender: gender || '',
             condition: condition || '',
@@ -112,11 +138,15 @@ router.post('/register', async (req, res) => {
             }
         });
     } catch (err) {
+        console.error('[register]', err);
         res.status(500).json({ success: false, message: err.message });
     }
 });
 
 // POST /api/auth/login
+// Returns user data and token for credentials verification
+// For real accounts: frontend will handle 2-step OTP flow
+// For demo accounts: immediate session
 router.post('/login', async (req, res) => {
     try {
         const { email, password } = req.body;
@@ -146,7 +176,9 @@ router.post('/login', async (req, res) => {
             });
         }
 
+        // Create JWT token for session
         const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRE || '7d' });
+        
         res.json({
             success: true,
             token,

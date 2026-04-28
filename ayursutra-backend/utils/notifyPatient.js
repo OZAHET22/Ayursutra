@@ -1,36 +1,34 @@
 /**
- * notifyPatient.js — Unified notification dispatcher (Gap 4)
- * Sends Socket.io + SMS + Email for any patient-facing event.
- * Used by appointment routes, tracking routes, and cron jobs.
+ * notifyPatient.js — Unified notification dispatcher
+ * Sends Socket.io (in-app) + Email for any patient-facing event.
+ * SMS and WhatsApp have been removed as they are not used in this project.
  */
 
-const { sendEmail, sendSMS, createInApp, emitToUser } = require('../services/notificationService');
+const { sendEmail, createInApp, emitToUser } = require('../services/notificationService');
 const User = require('../models/User');
 
 /**
  * @param {object} opts
- * @param {string}  opts.io           - Socket.io server instance
- * @param {string}  opts.patientId    - MongoDB ObjectId of patient
- * @param {string}  opts.type         - Notification type key
- * @param {string}  opts.title        - Notification title
- * @param {string}  opts.message      - Notification body
+ * @param {object}  opts.io              - Socket.io server instance
+ * @param {string}  opts.patientId       - MongoDB ObjectId of patient
+ * @param {string}  opts.type            - Notification type key
+ * @param {string}  opts.title           - Notification title
+ * @param {string}  opts.message         - Notification body
  * @param {string}  [opts.appointmentId] - Optional linked appointment
  * @param {string}  [opts.therapyType]   - Optional therapy name
- * @returns {Promise<{socketSent, smsSent, emailSent, smsError, emailError}>}
+ * @returns {Promise<{socketSent, emailSent, emailError}>}
  */
 async function notifyPatient({ io, patientId, type, title, message, appointmentId = null, therapyType = '' }) {
     const result = {
         socketSent: false,
-        smsSent: false,
         emailSent: false,
-        smsError: null,
         emailError: null,
     };
 
     // ── Fetch patient info ────────────────────────────────────────────────────
     let patient;
     try {
-        patient = await User.findById(patientId).select('email phone name notificationPrefs');
+        patient = await User.findById(patientId).select('email name');
     } catch (err) {
         console.error('[notifyPatient] Could not fetch patient:', err.message);
         return result;
@@ -50,22 +48,7 @@ async function notifyPatient({ io, patientId, type, title, message, appointmentI
         console.error('[notifyPatient] Socket/in-app error:', err.message);
     }
 
-    // ── 2. SMS ─────────────────────────────────────────────────────────────────
-    const apiKey = process.env.FAST2SMS_API_KEY || '';
-    if (apiKey && !apiKey.startsWith('your') && patient.phone) {
-        try {
-            const ok = await sendSMS(patient.phone, `Ayursutra: ${title}\n\n${message}`);
-            result.smsSent = !!ok;
-            if (!ok) result.smsError = 'SMS API returned failure';
-        } catch (err) {
-            result.smsError = err.message;
-            console.error('[notifyPatient] SMS error:', err.message);
-        }
-    } else {
-        result.smsError = apiKey ? 'Patient has no phone' : 'FAST2SMS_API_KEY not configured';
-    }
-
-    // ── 3. Email ───────────────────────────────────────────────────────────────
+    // ── 2. Email ───────────────────────────────────────────────────────────────
     const smtpUser = process.env.SMTP_USER || '';
     if (smtpUser && !smtpUser.startsWith('your') && patient.email) {
         try {

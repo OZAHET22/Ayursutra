@@ -39,14 +39,25 @@ export default function AppointmentsTab({ user, showNotification, socketRef }) {
         return () => clearInterval(interval);
     }, []);
 
-    // Real-time: refresh when another patient books a slot
+    // Real-time: refresh when another patient books a slot or a status changes (e.g. auto-missed)
     useEffect(() => {
         const socket = socketRef?.current;
         if (!socket) return;
         const handler = () => loadData();
-        socket.on('appointment_booked', handler);
-        return () => socket.off('appointment_booked', handler);
+        const onStatusChanged = ({ appointmentId, status }) => {
+            setAppointments(prev => prev.map(a => a._id === appointmentId ? { ...a, status } : a));
+            loadData();
+        };
+        socket.on('appointment_booked',         handler);
+        socket.on('slots_updated',              handler);
+        socket.on('appointment_status_changed', onStatusChanged);
+        return () => {
+            socket.off('appointment_booked',         handler);
+            socket.off('slots_updated',              handler);
+            socket.off('appointment_status_changed', onStatusChanged);
+        };
     }, [socketRef]);
+
 
     const filtered = useMemo(() => {
         const today = new Date().toDateString();

@@ -12,7 +12,7 @@ export const createAppointment = async (data) => {
 
 export const updateAppointment = async (id, data) => {
     const res = await API.put(`/appointments/${id}`, data);
-    return res.data; // returns { success, data, notifResult } — Gap 4
+    return res.data;
 };
 
 export const deleteAppointment = async (id) => {

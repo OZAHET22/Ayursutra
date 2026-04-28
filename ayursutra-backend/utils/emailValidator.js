@@ -102,14 +102,11 @@ async function validateEmail(email) {
             };
         }
     } catch (err) {
-        // ENOTFOUND or ENODATA technically mean the domain doesn't exist, 
-        // but if the network is blocking DNS (ECONNREFUSED, ETIMEOUT), we MUST fail-open 
+        // ENOTFOUND or ENODATA technically mean the domain doesn't exist,
+        // but if the network is blocking DNS (ECONNREFUSED, ETIMEOUT), we MUST fail-open
         // to prevent blocking legitimate domains like gmail.com!
+        // Fail-open in all DNS error cases in constrained local/CI environments.
         console.warn(`[EmailValidator] DNS resolution failed for ${domain} (${err.code}). Allowing by default.`);
-        if (err.code === 'ENODATA' || err.code === 'ENOTFOUND') {
-            // Even then, it's safer to fail-open in constrained local environments 
-            // where DNS resolving might be disabled entirely.
-        }
     }
 
     // Passed all checks

@@ -5,11 +5,18 @@ const DietPlan = require('../models/DietPlan');
 const Appointment = require('../models/Appointment');
 
 // GET /api/diets?patientId=xxx  — load diet plan(s) for a patient
+// Patient: can only access their own plans (auto-enforced)
+// Doctor: can access plans they created for their patients
 router.get('/', protect, async (req, res) => {
     try {
         const query = {};
-        if (req.query.patientId) query.patientId = req.query.patientId;
-        if (req.user.role === 'doctor') query.doctorId = req.user.id;
+        if (req.user.role === 'patient') {
+            // Patient can only view their own diet plans (strict data isolation)
+            query.patientId = req.user.id;
+        } else {
+            if (req.query.patientId) query.patientId = req.query.patientId;
+            if (req.user.role === 'doctor') query.doctorId = req.user.id;
+        }
         const plans = await DietPlan.find(query).sort({ createdAt: -1 });
         res.json({ success: true, data: plans });
     } catch (err) { res.status(500).json({ success: false, message: err.message }); }

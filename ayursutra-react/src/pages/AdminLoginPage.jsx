@@ -14,12 +14,15 @@ export default function AdminLoginPage({ showPage, showNotification }) {
         if (result.success && result.role === 'admin') {
             showNotification('Welcome, Admin! Loading dashboard...', 'success');
         } else if (result.success && result.role !== 'admin') {
-            showNotification('This portal is for Admin only. Please use the correct login.', 'error');
+            // Non-admin credentials — clear the session that login() just saved
+            import('../services/authService').then(({ logout }) => logout());
+            showNotification('This portal is for Admin only. Use the main login for patient/doctor access.', 'error');
         } else {
             showNotification(result.message || 'Invalid admin credentials.', 'error');
         }
         setLoading(false);
     };
+
 
     const fillDemo = () => {
         setEmail('admin@demo.com');

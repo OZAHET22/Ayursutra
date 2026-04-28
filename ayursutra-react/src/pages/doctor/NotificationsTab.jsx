@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { getNotifications, sendManualNotification } from '../../services/notificationService';
 import { getMyPatients } from '../../services/userService';
 
@@ -48,16 +48,16 @@ export default function DoctorNotificationsTab({ user, showNotification }) {
         therapyType: 'Consultation', channels: ['in_app'],
     });
 
-    const loadData = async () => {
+    const loadData = useCallback(async () => {
         try {
             const [n, p] = await Promise.all([getNotifications(), getMyPatients()]);
             setNotifications(n.data || []);
             setPatients(p || []);
         } catch { }
         finally { setLoading(false); }
-    };
+    }, []);
 
-    useEffect(() => { loadData(); }, []);
+    useEffect(() => { loadData(); }, [loadData]);
 
     const handleTemplateApply = () => {
         const msg = activeTemplate === 'pre' ? PRE_TEMPLATES[templateTherapy] : POST_TEMPLATES[templateTherapy];

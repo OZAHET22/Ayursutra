@@ -3,6 +3,7 @@ import * as appointmentService from '../../services/appointmentService';
 import { getDoctors } from '../../services/userService';
 import { updateChecklistItem } from '../../services/trackingService';
 import SlotPicker from '../../components/SlotPicker';
+import { SPECIALIZATIONS } from '../../data/specializations';
 
 const THERAPY_TYPES = ['Panchakarma', 'Abhyanga', 'Shirodhara', 'Basti', 'Nasya', 'Consultation', 'Virechana', 'Vamana'];
 
@@ -61,6 +62,15 @@ export default function AppointmentsTab({ user, showNotification, socketRef }) {
         type: '', doctorId: '', duration: '60', notes: '',
         selectedDate: '', selectedTime: '',
     });
+    const [selectedSpecialization, setSelectedSpecialization] = useState('');
+
+    // Doctors filtered by selected specialization (Feature 4 strict matching)
+    const filteredDoctors = useMemo(() => {
+        if (!selectedSpecialization) return doctors;
+        return doctors.filter(d =>
+            (d.speciality || '').toLowerCase() === selectedSpecialization.toLowerCase()
+        );
+    }, [doctors, selectedSpecialization]);
 
     // Reschedule form — now uses slot picker
     const [rescheduleForm, setRescheduleForm] = useState({
@@ -90,6 +100,27 @@ export default function AppointmentsTab({ user, showNotification, socketRef }) {
         const interval = setInterval(loadData, 15000);
         return () => clearInterval(interval);
     }, []);
+
+    // Real-time: react to appointment_status_changed (e.g. auto-missed by cron) and new bookings
+    useEffect(() => {
+        const socket = socketRef?.current;
+        if (!socket) return;
+        const onStatusChanged = ({ appointmentId, status }) => {
+            // Update in-place first for instant feedback, then do a background reload
+            setAppointments(prev => prev.map(a => a._id === appointmentId ? { ...a, status } : a));
+            loadData();
+        };
+        const onBooked = () => loadData();
+        socket.on('appointment_status_changed', onStatusChanged);
+        socket.on('appointment_booked',         onBooked);
+        socket.on('slots_updated',              onBooked);
+        return () => {
+            socket.off('appointment_status_changed', onStatusChanged);
+            socket.off('appointment_booked',         onBooked);
+            socket.off('slots_updated',              onBooked);
+        };
+    }, [socketRef]);
+
 
     const sorted = useMemo(() => {
         const copy = [...appointments];
@@ -146,6 +177,7 @@ export default function AppointmentsTab({ user, showNotification, socketRef }) {
         setConflictMsg('');
         try {
             const doc = doctors.find(d => d._id === apptForm.doctorId);
+            // Feature 4: enforce specialization match server-side via type check
             await appointmentService.createAppointment({
                 patientName: user.name,
                 doctorId:    apptForm.doctorId,
@@ -159,6 +191,7 @@ export default function AppointmentsTab({ user, showNotification, socketRef }) {
             });
             setShowModal(false);
             setApptForm({ type: '', doctorId: '', duration: '60', notes: '', selectedDate: '', selectedTime: '' });
+            setSelectedSpecialization('');
             showNotification('Appointment scheduled successfully! 🌿', 'success');
             loadData();
         } catch (err) {
@@ -318,7 +351,7 @@ export default function AppointmentsTab({ user, showNotification, socketRef }) {
                     <div className="dash-modal-content" style={{ maxWidth: '700px', width: '95vw' }}>
                         <div className="modal-header">
                             <h3>📅 Schedule New Appointment</h3>
-                            <button className="modal-close" onClick={() => { setShowModal(false); setConflictMsg(''); }}>×</button>
+                            <button className="modal-close" onClick={() => { setShowModal(false); setConflictMsg(''); setSelectedSpecialization(''); }}>×</button>
                         </div>
 
                         {conflictMsg && (
@@ -328,6 +361,44 @@ export default function AppointmentsTab({ user, showNotification, socketRef }) {
                         )}
 
                         <form onSubmit={submitAppt}>
+                            {/* ── Step 1: Specialization picker (Feature 4) ── */}
+                            <div className="dash-form-group">
+                                <label style={{ fontWeight: 700, color: '#2a7d2e' }}>🏥 Select Specialization *</label>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '0.5rem', marginTop: '0.4rem' }}>
+                                    {SPECIALIZATIONS.map(sp => (
+                                        <button
+                                            key={sp.id}
+                                            type="button"
+                                            onClick={() => {
+                                                setSelectedSpecialization(sp.label);
+                                                setApptForm(prev => ({ ...prev, doctorId: '', selectedTime: '' }));
+                                            }}
+                                            style={{
+                                                padding: '6px 8px',
+                                                border: `2px solid ${selectedSpecialization === sp.label ? '#2a7d2e' : '#e5e7eb'}`,
+                                                borderRadius: '8px',
+                                                background: selectedSpecialization === sp.label ? '#f0fdf4' : '#fff',
+                                                cursor: 'pointer',
+                                                fontSize: '0.75rem',
+                                                fontWeight: selectedSpecialization === sp.label ? 700 : 400,
+                                                color: selectedSpecialization === sp.label ? '#15803d' : '#555',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '4px',
+                                                transition: 'all 0.15s',
+                                            }}
+                                        >
+                                            <span>{sp.icon}</span> {sp.label}
+                                        </button>
+                                    ))}
+                                </div>
+                                {selectedSpecialization && (
+                                    <div style={{ marginTop: '6px', fontSize: '0.78rem', color: '#15803d', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '6px', padding: '4px 10px' }}>
+                                        ✓ Showing only <strong>{selectedSpecialization}</strong> doctors
+                                    </div>
+                                )}
+                            </div>
+
                             <div className="form-row">
                                 <div className="dash-form-group">
                                     <label>Therapy Type *</label>
@@ -338,10 +409,22 @@ export default function AppointmentsTab({ user, showNotification, socketRef }) {
                                 </div>
                                 <div className="dash-form-group">
                                     <label>Preferred Doctor *</label>
-                                    <select required value={apptForm.doctorId} onChange={e => setApptForm({ ...apptForm, doctorId: e.target.value, selectedTime: '' })}>
-                                        <option value="">Select Doctor</option>
-                                        {doctors.map(d => <option key={d._id} value={d._id}>{d.name} — {d.speciality || 'Ayurveda'}</option>)}
+                                    <select
+                                        required
+                                        value={apptForm.doctorId}
+                                        onChange={e => setApptForm({ ...apptForm, doctorId: e.target.value, selectedTime: '' })}
+                                        disabled={!selectedSpecialization}
+                                    >
+                                        <option value="">{selectedSpecialization ? 'Select Doctor' : '— Select Specialization first —'}</option>
+                                        {filteredDoctors.map(d => (
+                                            <option key={d._id} value={d._id}>{d.name} — {d.speciality || 'Ayurveda'}</option>
+                                        ))}
                                     </select>
+                                    {selectedSpecialization && filteredDoctors.length === 0 && (
+                                        <div style={{ marginTop: '4px', fontSize: '0.78rem', color: '#b45309', background: '#fef3c7', border: '1px solid #fde68a', borderRadius: '6px', padding: '4px 10px' }}>
+                                            ⚠️ No {selectedSpecialization} doctors available at your centre.
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 

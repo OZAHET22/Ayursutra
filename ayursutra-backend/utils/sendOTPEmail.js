@@ -95,7 +95,7 @@ async function sendOTPEmail(toEmail, otp, purpose) {
 
     const transporter = createTransporter();
     await transporter.sendMail({
-        from:    `"Ayursutra OTP" <${process.env.SMTP_USER}>`,
+        from:    `"Ayursutra OTP" <${process.env.EMAIL_USER}>`,
         to:      toEmail,
         subject: `${otp} — Your Ayursutra ${actionLabel} OTP`,
         html,

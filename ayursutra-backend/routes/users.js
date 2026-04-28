@@ -5,16 +5,24 @@ const User = require('../models/User');
 const Appointment = require('../models/Appointment');
 const { notifyPatient } = require('../utils/notifyPatient');
 
-// GET /api/users/my-patients — patients connected to the requesting doctor (via appointments)
+// GET /api/users/my-patients — patients connected to the requesting doctor
+// Includes: (1) patients who had appointments, (2) patients with preferredDoctor set to this doctor
 router.get('/my-patients', protect, authorize('doctor', 'admin'), async (req, res) => {
     try {
-        // Find all distinct patientIds who have had an appointment with this doctor
         const doctorId = req.user.role === 'doctor' ? req.user.id : null;
         if (!doctorId) {
             return res.status(403).json({ success: false, message: 'Only doctors can access this endpoint' });
         }
-        const appts = await Appointment.find({ doctorId }).distinct('patientId');
-        const patients = await User.find({ _id: { $in: appts }, role: 'patient' })
+        // Union: patients via appointments + patients assigned via preferredDoctor
+        const [apptIds, prefPatients] = await Promise.all([
+            Appointment.find({ doctorId }).distinct('patientId'),
+            User.find({ role: 'patient', preferredDoctor: doctorId }).select('_id'),
+        ]);
+        const allIds = [...new Set([
+            ...apptIds.map(id => id.toString()),
+            ...prefPatients.map(p => p._id.toString()),
+        ])];
+        const patients = await User.find({ _id: { $in: allIds }, role: 'patient' })
             .select('-password')
             .sort({ name: 1 });
         res.json({ success: true, data: patients });
@@ -39,13 +47,67 @@ router.get('/doctors/pending', protect, authorize('admin'), async (req, res) => 
     } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// GET /api/users/doctors — approved doctors only (public — needed for signup page before login)
+// GET /api/users/doctors — all approved doctors with schedule profile info (public)
+// Feature 4: supports ?specialization=<label> for strict doctor-patient matching
 router.get('/doctors', async (req, res) => {
     try {
-        const doctors = await User.find({ role: 'doctor', approved: true }).select('-password');
-        res.json({ success: true, data: doctors });
+        const DoctorSchedule = require('../models/DoctorSchedule');
+        const Feedback = require('../models/Feedback');
+        const filter = { role: 'doctor', approved: true };
+        // Strict specialization filter — cross-specialization connections not allowed
+        if (req.query.specialization) {
+            filter.speciality = req.query.specialization;
+        }
+        const doctors = await User.find(filter).select('-password');
+
+        // Enrich each doctor with their schedule profile (fee, qualifications, bio)
+        const doctorIds = doctors.map(d => d._id);
+        const [schedules, ratingStats] = await Promise.all([
+            DoctorSchedule.find({ doctorId: { $in: doctorIds } })
+                .select('doctorId consultationFee feeCurrency qualifications bio languages profileVisible slotDuration workingDays'),
+            // Aggregate avg rating + total reviews per doctor in one query
+            Feedback.aggregate([
+                { $match: { doctorId: { $in: doctorIds } } },
+                {
+                    $group: {
+                        _id: '$doctorId',
+                        avgRating: { $avg: '$rating' },
+                        reviewCount: { $sum: 1 },
+                    }
+                }
+            ])
+        ]);
+
+        const scheduleMap = {};
+        schedules.forEach(s => { scheduleMap[s.doctorId.toString()] = s; });
+
+        const ratingMap = {};
+        ratingStats.forEach(r => { ratingMap[r._id.toString()] = r; });
+
+        const enriched = doctors
+            .map(d => {
+                const s = scheduleMap[d._id.toString()];
+                const r = ratingMap[d._id.toString()];
+                return {
+                    ...d.toObject(),
+                    consultationFee:  s?.consultationFee  ?? 0,
+                    feeCurrency:      s?.feeCurrency      ?? 'INR',
+                    qualifications:   s?.qualifications   ?? '',
+                    bio:              s?.bio              ?? '',
+                    languages:        s?.languages        ?? ['English'],
+                    profileVisible:   s?.profileVisible   ?? true,
+                    slotDuration:     s?.slotDuration     ?? 30,
+                    workingDays:      s?.workingDays      ?? [],
+                    avgRating:        r ? parseFloat(r.avgRating.toFixed(1)) : 0,
+                    reviewCount:      r?.reviewCount ?? 0,
+                };
+            })
+            .filter(d => d.profileVisible !== false);
+
+        res.json({ success: true, data: enriched });
     } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
+
 
 // POST /api/users/reassign-doctor — patient changes their centre + doctor atomically
 // Cancels all pending/confirmed appointments with the OLD doctor automatically.
@@ -163,16 +225,32 @@ router.put('/:id/approve', protect, authorize('admin'), async (req, res) => {
     } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// GET /api/users/:id — get single user (self, or doctor fetching patient, or admin)
+// PUT /api/users/:id/revoke — admin revokes/hides a doctor (soft — does NOT delete)
+router.put('/:id/revoke', protect, authorize('admin'), async (req, res) => {
+    try {
+        const user = await User.findByIdAndUpdate(
+            req.params.id,
+            { approved: false },
+            { new: true }
+        ).select('-password');
+        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+        res.json({ success: true, data: user, message: 'Doctor visibility revoked. They can be re-approved anytime.' });
+    } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// GET /api/users/:id — get single user (self, or doctor fetching patient, or admin, or patient fetching their assigned doctor)
 router.get('/:id', protect, async (req, res) => {
     try {
-        // Patients can only fetch their own profile
-        if (req.user.role === 'patient' && req.user.id !== req.params.id) {
-            return res.status(403).json({ success: false, message: 'Not authorized to view this profile' });
+        const target = await User.findById(req.params.id).select('-password');
+        if (!target) return res.status(404).json({ success: false, message: 'User not found' });
+
+        // Patients can fetch their own profile OR any doctor's profile (for feedback display)
+        if (req.user.role === 'patient') {
+            if (req.user.id !== req.params.id && target.role !== 'doctor') {
+                return res.status(403).json({ success: false, message: 'Not authorized to view this profile' });
+            }
         }
-        const user = await User.findById(req.params.id).select('-password');
-        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
-        res.json({ success: true, data: user });
+        res.json({ success: true, data: target });
     } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 

@@ -1,9 +1,14 @@
 import API from './api';
 
 /** Fetch all unavailability blocks for the logged-in doctor */
-export async function getMyBlocks() {
+export async function getAllBlocks() {
     const res = await API.get('/blocks/all');
-    return res.data.data || [];
+    return res.data;
+}
+
+/** Alias for backward compatibility */
+export async function getMyBlocks() {
+    return getAllBlocks();
 }
 
 /**
@@ -22,6 +27,16 @@ export async function getBlocksForDate(doctorId, date) {
  */
 export async function createBlock(block) {
     const res = await API.post('/blocks', block);
+    return res.data.data;
+}
+
+/**
+ * Update an existing block.
+ * @param {string} id - Block ID
+ * @param {object} block - { date?, isRecurring, dayOfWeek?, startHour, startMinute, endHour, endMinute, reason }
+ */
+export async function updateBlock(id, block) {
+    const res = await API.patch(`/blocks/${id}`, block);
     return res.data.data;
 }
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import * as therapyService from '../../services/therapyService';
 import { getMyPatients } from '../../services/userService';
 import { getTherapySlots, saveTherapySlots, updateTherapySlotStatus } from '../../services/trackingService';
@@ -25,15 +25,9 @@ function TherapySlotsManager({ therapy, showNotification, onRefresh }) {
     const loadSlots = async () => {
         try {
             const s = await getTherapySlots(therapy._id);
-            // If no slots exist yet, pre-fill from totalSessions
             if (!s || s.length === 0) {
                 const generated = Array.from({ length: totalSessions }, (_, i) => ({
-                    slotIndex: i + 1,
-                    date: '',
-                    time: '',
-                    duration: 60,
-                    notes: '',
-                    status: 'scheduled',
+                    slotIndex: i + 1, date: '', time: '', duration: 60, notes: '', status: 'scheduled',
                 }));
                 setSlots(generated);
             } else {
@@ -60,49 +54,56 @@ function TherapySlotsManager({ therapy, showNotification, onRefresh }) {
         setDirty(true);
     };
 
+    // Save ONE slot: PATCH status/notes first (backend auto-recalculates therapy.completed & progress),
+    // then POST the full slots array to persist date/time/duration changes.
+    const saveSlot = async (slot, idx) => {
+        setSavingSlotIdx(slot.slotIndex);
+        try {
+            await updateTherapySlotStatus(therapy._id, slot.slotIndex, slot.status, slot.notes);
+            const updatedSlots = slots.map((s, i) => i === idx ? { ...s } : s);
+            await saveTherapySlots(therapy._id, updatedSlots);
+            showNotification(`Session #${slot.slotIndex} updated successfully!`, 'success');
+            setDirty(false);
+            loadSlots();
+            onRefresh();
+        } catch (err) {
+            showNotification(err.response?.data?.message || `Failed to save session #${slot.slotIndex}.`, 'error');
+        } finally { setSavingSlotIdx(null); }
+    };
+
+    // Save ALL slots at once (date/time/duration/notes — status is batched too via saveTherapySlots)
     const saveAll = async () => {
         setSaving(true);
         try {
             await saveTherapySlots(therapy._id, slots);
-            showNotification('Session schedule saved & patient notified!', 'success');
+            showNotification('All sessions saved & patient notified!', 'success');
             setDirty(false);
+            loadSlots();
             onRefresh();
         } catch (err) {
-            showNotification(err.response?.data?.message || 'Failed to save slots.', 'error');
+            showNotification(err.response?.data?.message || 'Failed to save.', 'error');
         } finally { setSaving(false); }
     };
 
-    const markSlotStatus = async (slot, newStatus) => {
-        setSavingSlotIdx(slot.slotIndex);
-        try {
-            await updateTherapySlotStatus(therapy._id, slot.slotIndex, newStatus, slot.notes);
-            showNotification(`Session ${slot.slotIndex} marked as ${newStatus}.`, 'success');
-            loadSlots();
-            onRefresh();
-        } catch {
-            showNotification('Failed to update slot status.', 'error');
-        } finally { setSavingSlotIdx(null); }
-    };
-
-    if (loading) return <div style={{ padding: '1rem', color: '#aaa', fontSize: '0.85rem' }}>Loading session schedule…</div>;
+    if (loading) return <div style={{ padding: '1rem', color: '#aaa', fontSize: '0.85rem' }}>Loading sessions…</div>;
 
     const completedCount = slots.filter(s => s.status === 'completed').length;
+    const BG  = { completed: '#e8f5e9', missed: '#ffebee', rescheduled: '#fff8e1', cancelled: '#f5f5f5', scheduled: '#f5f9ff' };
+    const BD  = { completed: '#c8e6c9', missed: '#ffcdd2', rescheduled: '#ffe082', cancelled: '#eee',    scheduled: '#bbdefb' };
 
     return (
         <div>
-            {/* Header row */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-                <div style={{ fontSize: '0.85rem', color: '#555' }}>
-                    👤 <strong>{therapy.patientName}</strong> · {completedCount}/{slots.length} sessions completed
-                </div>
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <button onClick={addSlot}
-                        style={{ padding: '5px 12px', borderRadius: '7px', border: '1px solid #c8e6c9', background: '#e8f5e9', color: '#2a7d2e', fontWeight: 600, fontSize: '0.78rem', cursor: 'pointer' }}>
-                        + Add Slot
+            {/* Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem' }}>
+                <span style={{ fontSize: '0.82rem', color: '#555' }}>
+                    👤 <strong>{therapy.patientName}</strong> · {completedCount}/{slots.length} completed
+                </span>
+                <div style={{ display: 'flex', gap: '0.4rem' }}>
+                    <button onClick={addSlot} style={{ padding: '4px 10px', borderRadius: '7px', border: '1px solid #c8e6c9', background: '#e8f5e9', color: '#2a7d2e', fontWeight: 600, fontSize: '0.75rem', cursor: 'pointer' }}>
+                        + Add Session
                     </button>
                     {dirty && (
-                        <button onClick={saveAll} disabled={saving}
-                            style={{ padding: '5px 14px', borderRadius: '7px', border: 'none', background: saving ? '#ccc' : '#2a7d2e', color: '#fff', fontWeight: 700, fontSize: '0.78rem', cursor: saving ? 'not-allowed' : 'pointer' }}>
+                        <button onClick={saveAll} disabled={saving} style={{ padding: '4px 12px', borderRadius: '7px', border: 'none', background: saving ? '#ccc' : '#2a7d2e', color: '#fff', fontWeight: 700, fontSize: '0.75rem', cursor: saving ? 'not-allowed' : 'pointer' }}>
                             {saving ? 'Saving…' : '💾 Save All'}
                         </button>
                     )}
@@ -110,100 +111,102 @@ function TherapySlotsManager({ therapy, showNotification, onRefresh }) {
             </div>
 
             {/* Progress bar */}
-            <div style={{ height: '6px', background: '#e0e0e0', borderRadius: '3px', overflow: 'hidden', marginBottom: '0.75rem' }}>
-                <div style={{ height: '6px', background: 'linear-gradient(90deg, #2a7d2e, #66bb6a)', borderRadius: '3px', width: `${slots.length > 0 ? Math.round((completedCount / slots.length) * 100) : 0}%`, transition: 'width 0.5s' }} />
+            <div style={{ height: '5px', background: '#e0e0e0', borderRadius: '3px', overflow: 'hidden', marginBottom: '0.7rem' }}>
+                <div style={{ height: '5px', background: 'linear-gradient(90deg,#2a7d2e,#66bb6a)', width: `${slots.length > 0 ? Math.round((completedCount/slots.length)*100) : 0}%`, transition: 'width 0.5s', borderRadius: '3px' }} />
             </div>
 
-            {/* Slot rows */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '320px', overflowY: 'auto' }}>
-                {slots.map((slot, i) => (
-                    <div key={i} style={{
-                        display: 'grid',
-                        gridTemplateColumns: '32px 1fr 90px 70px 1fr auto',
-                        gap: '0.4rem',
-                        alignItems: 'center',
-                        padding: '0.5rem 0.6rem',
-                        borderRadius: '8px',
-                        background: slot.status === 'completed' ? '#e8f5e9' : slot.status === 'missed' ? '#ffebee' : '#fafafa',
-                        border: `1px solid ${slot.status === 'completed' ? '#c8e6c9' : slot.status === 'missed' ? '#ffcdd2' : '#eee'}`,
-                    }}>
-                        {/* Index */}
-                        <span style={{ fontWeight: 700, fontSize: '0.78rem', color: '#888', textAlign: 'center' }}>#{slot.slotIndex}</span>
+            {/* Column labels */}
+            <div style={{ display: 'grid', gridTemplateColumns: '26px 108px 76px 58px 1fr 105px 82px', gap: '0.3rem', padding: '0 0.4rem 0.3rem', fontSize: '0.68rem', color: '#aaa', fontWeight: 700, textTransform: 'uppercase' }}>
+                <span>#</span><span>Date</span><span>Time</span><span>Min</span><span>Notes</span><span>Status</span><span>Save/Del</span>
+            </div>
 
-                        {/* Date */}
+            {/* Session rows — every field always editable */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', maxHeight: '360px', overflowY: 'auto', paddingRight: '2px' }}>
+                {slots.map((slot, i) => (
+                    <div key={slot.slotIndex} style={{
+                        display: 'grid',
+                        gridTemplateColumns: '26px 108px 76px 58px 1fr 105px 82px',
+                        gap: '0.3rem',
+                        alignItems: 'center',
+                        padding: '0.45rem 0.5rem',
+                        borderRadius: '8px',
+                        background: BG[slot.status] || '#fafafa',
+                        border: `1px solid ${BD[slot.status] || '#eee'}`,
+                        transition: 'background 0.2s',
+                    }}>
+                        {/* # */}
+                        <span style={{ fontWeight: 700, fontSize: '0.75rem', color: '#777', textAlign: 'center' }}>#{slot.slotIndex}</span>
+
+                        {/* Date — always editable */}
                         <input type="date" value={slot.date || ''}
                             onChange={e => updateField(i, 'date', e.target.value)}
-                            disabled={slot.status === 'completed'}
-                            style={{ padding: '3px 6px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '0.78rem', width: '100%', boxSizing: 'border-box' }} />
+                            style={{ padding: '3px 4px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '0.73rem', width: '100%', boxSizing: 'border-box' }} />
 
-                        {/* Time */}
+                        {/* Time — always editable */}
                         <input type="time" value={slot.time || ''}
                             onChange={e => updateField(i, 'time', e.target.value)}
-                            disabled={slot.status === 'completed'}
-                            style={{ padding: '3px 6px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '0.78rem', width: '100%' }} />
+                            style={{ padding: '3px 4px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '0.73rem', width: '100%' }} />
 
                         {/* Duration */}
                         <select value={slot.duration || 60}
                             onChange={e => updateField(i, 'duration', Number(e.target.value))}
-                            disabled={slot.status === 'completed'}
-                            style={{ padding: '3px 4px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '0.75rem' }}>
-                            {[30, 45, 60, 90, 120].map(d => <option key={d} value={d}>{d}m</option>)}
+                            style={{ padding: '3px 2px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '0.7rem' }}>
+                            {[30, 45, 60, 90, 120].map(d => <option key={d} value={d}>{d}</option>)}
                         </select>
 
-                        {/* Notes */}
-                        <input type="text" value={slot.notes || ''} placeholder="Notes…"
+                        {/* Notes — always editable */}
+                        <input type="text" value={slot.notes || ''} placeholder="Session notes…"
                             onChange={e => updateField(i, 'notes', e.target.value)}
-                            style={{ padding: '3px 6px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '0.75rem', width: '100%', boxSizing: 'border-box' }} />
+                            style={{ padding: '3px 5px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '0.71rem', width: '100%', boxSizing: 'border-box' }} />
 
-                        {/* Actions */}
+                        {/* Status dropdown — doctor can change to any status at any time */}
+                        <select value={slot.status || 'scheduled'}
+                            onChange={e => updateField(i, 'status', e.target.value)}
+                            style={{
+                                padding: '3px 3px', borderRadius: '6px', fontSize: '0.71rem',
+                                border: `1px solid ${BD[slot.status] || '#ddd'}`,
+                                background: BG[slot.status] || '#fff',
+                                fontWeight: 600, cursor: 'pointer',
+                            }}>
+                            {SLOT_STATUS_OPTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                        </select>
+
+                        {/* Save + Delete */}
                         <div style={{ display: 'flex', gap: '3px' }}>
-                            {slot.status !== 'completed' && (
-                                <button
-                                    onClick={() => markSlotStatus(slot, 'completed')}
-                                    disabled={savingSlotIdx === slot.slotIndex}
-                                    title="Mark as completed"
-                                    style={{ padding: '3px 7px', borderRadius: '6px', border: 'none', background: '#e8f5e9', color: '#2a7d2e', fontSize: '0.8rem', cursor: 'pointer', fontWeight: 700 }}>
-                                    ✓
-                                </button>
-                            )}
-                            {slot.status !== 'missed' && slot.status !== 'completed' && (
-                                <button
-                                    onClick={() => markSlotStatus(slot, 'missed')}
-                                    disabled={savingSlotIdx === slot.slotIndex}
-                                    title="Mark as missed"
-                                    style={{ padding: '3px 7px', borderRadius: '6px', border: 'none', background: '#ffebee', color: '#c62828', fontSize: '0.8rem', cursor: 'pointer' }}>
-                                    ✗
-                                </button>
-                            )}
-                            {slot.status === 'scheduled' && (
-                                <button
-                                    onClick={() => removeSlot(i)}
-                                    title="Remove slot"
-                                    style={{ padding: '3px 7px', borderRadius: '6px', border: 'none', background: '#f5f5f5', color: '#aaa', fontSize: '0.8rem', cursor: 'pointer' }}>
-                                    🗑
-                                </button>
-                            )}
+                            <button
+                                onClick={() => saveSlot(slot, i)}
+                                disabled={savingSlotIdx === slot.slotIndex}
+                                title="Save this session"
+                                style={{ flex: 1, padding: '4px 0', borderRadius: '6px', border: 'none', background: '#2a7d2e', color: '#fff', fontSize: '0.75rem', cursor: savingSlotIdx === slot.slotIndex ? 'not-allowed' : 'pointer', fontWeight: 700, opacity: savingSlotIdx === slot.slotIndex ? 0.6 : 1 }}>
+                                {savingSlotIdx === slot.slotIndex ? '…' : '💾'}
+                            </button>
+                            <button
+                                onClick={() => removeSlot(i)}
+                                title="Remove session"
+                                style={{ padding: '4px 7px', borderRadius: '6px', border: 'none', background: '#ffebee', color: '#c62828', fontSize: '0.75rem', cursor: 'pointer' }}>
+                                🗑
+                            </button>
                         </div>
                     </div>
                 ))}
             </div>
 
             {slots.length === 0 && (
-                <div style={{ textAlign: 'center', padding: '1rem', color: '#aaa', fontSize: '0.85rem' }}>
-                    No slots yet. Click + Add Slot above.
+                <div style={{ textAlign: 'center', padding: '1.5rem', color: '#aaa', fontSize: '0.83rem' }}>
+                    No sessions yet. Click <strong>+ Add Session</strong> above to schedule.
                 </div>
             )}
 
             {dirty && (
-                <div style={{ marginTop: '0.6rem', fontSize: '0.78rem', color: '#e65100', textAlign: 'right' }}>
-                    ⚠️ Unsaved changes — click Save All to notify the patient.
+                <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: '#e65100', textAlign: 'right' }}>
+                    ⚠️ Unsaved changes — use 💾 per row or <strong>Save All</strong>
                 </div>
             )}
         </div>
     );
 }
 
-export default function TherapiesTab({ user, showNotification }) {
+export default function TherapiesTab({ user, showNotification, socketRef }) {
     const [therapies, setTherapies] = useState([]);
     const [patients, setPatients] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -215,21 +218,60 @@ export default function TherapiesTab({ user, showNotification }) {
     const [form, setForm] = useState({ name: '', patientId: '', description: '', type: '', sessions: '10', startDate: '', endDate: '' });
     // Which therapy has its slot manager expanded
     const [slotsOpenFor, setSlotsOpenFor] = useState(null);
+    // Edit modal
+    const [editModal, setEditModal] = useState(null); // holds therapy being edited
+    const [editForm, setEditForm] = useState({ name: '', description: '', type: '', sessions: '10', startDate: '', endDate: '', status: 'upcoming' });
+    const [deleting, setDeleting] = useState(null); // holds therapy._id being deleted
 
-    const loadData = async () => {
+    const [error, setError] = useState(null);
+
+    const loadData = useCallback(async () => {
+        setError(null);
         try {
-            const [ts, ps] = await Promise.all([therapyService.getTherapies(), getMyPatients()]);
-            setTherapies(ts || []);
-            setPatients(ps || []);
-        } catch (err) { console.error('Load error:', err); }
-        finally { setLoading(false); }
-    };
+            // Run both fetches in parallel for speed — failures are caught independently
+            const [ts, ps] = await Promise.allSettled([
+                therapyService.getTherapies(),
+                getMyPatients(),
+            ]);
+            // therapies
+            if (ts.status === 'fulfilled') {
+                setTherapies(Array.isArray(ts.value) ? ts.value : []);
+            } else {
+                const msg = ts.reason?.message || 'Failed to load therapies';
+                console.error('[TherapiesTab] getTherapies:', msg);
+                setTherapies([]);
+                setError(msg);
+            }
+            // patients (non-blocking — dropdown just stays empty)
+            if (ps.status === 'fulfilled') {
+                setPatients(Array.isArray(ps.value) ? ps.value : []);
+            } else {
+                console.error('[TherapiesTab] getMyPatients:', ps.reason?.message);
+                setPatients([]);
+            }
+        } finally {
+            // ALWAYS clear the loading spinner, even on unexpected errors
+            setLoading(false);
+        }
+    }, []);
 
     useEffect(() => {
         loadData();
         const interval = setInterval(loadData, 15000);
         return () => clearInterval(interval);
-    }, []);
+    }, [loadData]);
+
+    // Real-time: refresh therapy list when a slot update arrives
+    useEffect(() => {
+        const socket = socketRef?.current;
+        if (!socket) return;
+        socket.on('therapy_slots_updated', loadData);
+        socket.on('appointment_booked',    loadData);
+        return () => {
+            socket.off('therapy_slots_updated', loadData);
+            socket.off('appointment_booked',    loadData);
+        };
+    }, [socketRef, loadData]);
 
     const filtered = therapies.filter(t => filter === 'all' || t.type === filter);
 
@@ -292,6 +334,53 @@ export default function TherapiesTab({ user, showNotification }) {
         } catch { showNotification('Failed to update status.', 'error'); }
     };
 
+    // ── Open Edit Modal pre-filled with existing data ──────────────────────────
+    const openEdit = (therapy) => {
+        setEditForm({
+            name: therapy.name || '',
+            description: therapy.description || '',
+            type: therapy.type || '',
+            sessions: String(therapy.sessions || 10),
+            startDate: therapy.startDate ? therapy.startDate.slice(0, 10) : '',
+            endDate: therapy.endDate ? therapy.endDate.slice(0, 10) : '',
+            status: therapy.status || 'upcoming',
+        });
+        setEditModal(therapy);
+    };
+
+    const submitEdit = async (e) => {
+        e.preventDefault();
+        setSubmitting(true);
+        try {
+            await therapyService.updateTherapy(editModal._id, {
+                name: editForm.name,
+                description: editForm.description,
+                type: editForm.type,
+                sessions: Number(editForm.sessions),
+                startDate: editForm.startDate,
+                endDate: editForm.endDate,
+                status: editForm.status,
+            });
+            setEditModal(null);
+            showNotification('Therapy plan updated successfully!', 'success');
+            loadData();
+        } catch (err) {
+            showNotification(err.response?.data?.message || 'Failed to update therapy.', 'error');
+        } finally { setSubmitting(false); }
+    };
+
+    const deleteTherapy = async (therapy) => {
+        if (!window.confirm(`Delete "${therapy.name}" for ${therapy.patientName}? This cannot be undone.`)) return;
+        setDeleting(therapy._id);
+        try {
+            await therapyService.deleteTherapy(therapy._id);
+            showNotification('Therapy plan deleted.', 'success');
+            loadData();
+        } catch (err) {
+            showNotification(err.response?.data?.message || 'Failed to delete therapy.', 'error');
+        } finally { setDeleting(null); }
+    };
+
     if (loading) return (
         <div className="tab-content active" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '300px' }}>
             <div style={{ textAlign: 'center', color: '#2a7d2e' }}>
@@ -309,6 +398,15 @@ export default function TherapiesTab({ user, showNotification }) {
                 </h2>
                 <button className="dash-btn dash-btn-primary" onClick={() => setShowModal(true)}>+ Add New Therapy</button>
             </div>
+
+            {/* Error banner */}
+            {error && (
+                <div style={{ background: '#ffebee', border: '1px solid #ffcdd2', borderRadius: '8px', padding: '0.75rem 1rem', marginBottom: '1rem', color: '#c62828', fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span>⚠️</span>
+                    <span>{error}</span>
+                    <button onClick={loadData} style={{ marginLeft: 'auto', padding: '4px 12px', borderRadius: '6px', border: 'none', background: '#c62828', color: '#fff', cursor: 'pointer', fontWeight: 600, fontSize: '0.78rem' }}>Retry</button>
+                </div>
+            )}
 
             <div className="stats-grid">
                 <div className="stat-card"><div className="stat-content"><h3>Active</h3><p className="stat-value">{therapies.filter(t => t.status === 'active').length}</p></div><div className="stat-icon">💆</div></div>
@@ -364,6 +462,22 @@ export default function TherapiesTab({ user, showNotification }) {
                             {t.status === 'active' && <button className="dash-btn dash-btn-secondary dash-btn-sm" onClick={() => updateStatus(t, 'paused')}>⏸ Pause</button>}
                             {t.status === 'paused' && <button className="dash-btn dash-btn-success dash-btn-sm" onClick={() => updateStatus(t, 'active')}>▶ Resume</button>}
                             {(t.status === 'active' || t.status === 'paused') && <button className="dash-btn dash-btn-danger dash-btn-sm" onClick={() => updateStatus(t, 'completed')}>✓ Complete</button>}
+                            {/* ── Edit & Delete ──────────────────────── */}
+                            <button
+                                className="dash-btn dash-btn-sm"
+                                onClick={() => openEdit(t)}
+                                style={{ background: '#fff3e0', color: '#e65100', border: '1px solid #ffe0b2', fontWeight: 600 }}
+                            >
+                                ✏️ Edit
+                            </button>
+                            <button
+                                className="dash-btn dash-btn-sm"
+                                onClick={() => deleteTherapy(t)}
+                                disabled={deleting === t._id}
+                                style={{ background: '#ffebee', color: '#c62828', border: '1px solid #ffcdd2', fontWeight: 600 }}
+                            >
+                                {deleting === t._id ? '…' : '🗑️ Delete'}
+                            </button>
                         </div>
 
                         {/* ── Per-patient Therapy Slot Manager Toggle ───────────────── */}
@@ -430,6 +544,67 @@ export default function TherapiesTab({ user, showNotification }) {
                         <button className="dash-btn dash-btn-primary" style={{ width: '100%' }} disabled={submitting} onClick={() => logSession(sessionModal)}>
                             {submitting ? 'Logging...' : '✓ Log This Session'}
                         </button>
+                    </div>
+                </div>
+            )}
+
+            {/* ── Edit Therapy Modal ─────────────────────────────────────── */}
+            {editModal && (
+                <div className="dash-modal open">
+                    <div className="dash-modal-content">
+                        <div className="modal-header">
+                            <h3>✏️ Edit Therapy Plan</h3>
+                            <button className="modal-close" onClick={() => setEditModal(null)}>×</button>
+                        </div>
+                        <form onSubmit={submitEdit}>
+                            <div className="dash-form-group">
+                                <label>Therapy Name</label>
+                                <input required type="text" value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} />
+                            </div>
+                            <div className="form-row">
+                                <div className="dash-form-group">
+                                    <label>Therapy Type</label>
+                                    <select required value={editForm.type} onChange={e => setEditForm({ ...editForm, type: e.target.value })}>
+                                        <option value="">Select Type</option>
+                                        {['panchakarma','abhyanga','shirodhara','basti','nasya'].map(tp => (
+                                            <option key={tp} value={tp}>{tp.charAt(0).toUpperCase() + tp.slice(1)}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="dash-form-group">
+                                    <label>Status</label>
+                                    <select value={editForm.status} onChange={e => setEditForm({ ...editForm, status: e.target.value })}>
+                                        {['upcoming','active','paused','completed'].map(s => (
+                                            <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+                            <div className="dash-form-group">
+                                <label>Description</label>
+                                <textarea rows={3} value={editForm.description} onChange={e => setEditForm({ ...editForm, description: e.target.value })} />
+                            </div>
+                            <div className="form-row">
+                                <div className="dash-form-group">
+                                    <label>Total Sessions</label>
+                                    <input type="number" min="1" value={editForm.sessions} onChange={e => setEditForm({ ...editForm, sessions: e.target.value })} />
+                                </div>
+                                <div className="dash-form-group">
+                                    <label>Start Date</label>
+                                    <input type="date" required value={editForm.startDate} onChange={e => setEditForm({ ...editForm, startDate: e.target.value })} />
+                                </div>
+                            </div>
+                            <div className="dash-form-group">
+                                <label>End Date</label>
+                                <input type="date" required value={editForm.endDate} onChange={e => setEditForm({ ...editForm, endDate: e.target.value })} />
+                            </div>
+                            <div style={{ display: 'flex', gap: '0.75rem' }}>
+                                <button type="button" className="dash-btn dash-btn-secondary" style={{ flex: 1 }} onClick={() => setEditModal(null)}>Cancel</button>
+                                <button type="submit" className="dash-btn dash-btn-primary" style={{ flex: 1 }} disabled={submitting}>
+                                    {submitting ? 'Saving…' : '💾 Save Changes'}
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             )}

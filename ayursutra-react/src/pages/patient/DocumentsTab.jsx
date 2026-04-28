@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import * as documentService from '../../services/documentService';
 
 export default function DocumentsTab({ user, showNotification }) {
@@ -7,38 +7,62 @@ export default function DocumentsTab({ user, showNotification }) {
     const [showModal, setShowModal] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [docForm, setDocForm] = useState({ name: '', type: '', date: new Date().toISOString().split('T')[0] });
+    const [fileData, setFileData] = useState(null);   // base64 data URL of picked file
+    const [fileType, setFileType] = useState('pdf');  // derived from extension
+    const fileInputRef = useRef();
 
     const icons = { pdf: '📄', word: '📝', image: '🖼️', default: '📁' };
 
-    const loadDocuments = async () => {
+    const loadDocuments = useCallback(async () => {
         try {
             const data = await documentService.getDocuments();
             setDocuments(data || []);
         } catch (err) {
             console.error('Failed to load documents:', err);
         } finally { setLoading(false); }
-    };
+    }, []);
 
     useEffect(() => {
         loadDocuments();
         const interval = setInterval(loadDocuments, 15000);
         return () => clearInterval(interval);
-    }, []);
+    }, [loadDocuments]);
+
+    // Derive fileType from extension and read file as data URL
+    function handleFileChange(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        const ext = file.name.split('.').pop().toLowerCase();
+        const type = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)
+            ? 'image'
+            : ext === 'pdf'
+            ? 'pdf'
+            : ['doc', 'docx'].includes(ext)
+            ? 'word'
+            : 'pdf';
+        setFileType(type);
+        const reader = new FileReader();
+        reader.onload = ev => setFileData(ev.target.result);
+        reader.readAsDataURL(file);
+    }
 
     const submitUpload = async (e) => {
         e.preventDefault();
         setSubmitting(true);
         try {
-            const fileType = docForm.type === 'lab-report' ? 'pdf' : 'pdf';
             await documentService.uploadDocument({
                 name: docForm.name,
                 type: docForm.type,
                 date: docForm.date,
                 fileType,
+                fileUrl: fileData || '',   // base64 data URL — backend stores as-is
                 reviewed: false,
             });
             setShowModal(false);
             setDocForm({ name: '', type: '', date: new Date().toISOString().split('T')[0] });
+            setFileData(null);
+            setFileType('pdf');
+            if (fileInputRef.current) fileInputRef.current.value = '';
             showNotification('Document uploaded successfully! Your doctor will be notified.', 'success');
             loadDocuments();
         } catch (err) {
@@ -133,7 +157,17 @@ export default function DocumentsTab({ user, showNotification }) {
                             </div>
                             <div className="dash-form-group">
                                 <label>Select File (PDF, DOC, JPG, PNG)</label>
-                                <input type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" />
+                                <input
+                                    type="file"
+                                    ref={fileInputRef}
+                                    accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                                    onChange={handleFileChange}
+                                />
+                                {fileData && (
+                                    <small style={{ color: '#2a7d2e', marginTop: '0.25rem', display: 'block' }}>
+                                        ✓ File ready to upload ({fileType.toUpperCase()})
+                                    </small>
+                                )}
                                 <small style={{ color: '#777', marginTop: '0.25rem', display: 'block' }}>Maximum file size: 10MB</small>
                             </div>
                             <div style={{ padding: '0.75rem', background: '#f0f9f0', borderRadius: '8px', marginBottom: '1rem', fontSize: '0.85rem', color: '#2a7d2e' }}>
