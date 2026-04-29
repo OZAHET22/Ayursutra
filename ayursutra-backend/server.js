@@ -131,6 +131,24 @@ app.use('/api/blocks',           require('./routes/blocks'));
 app.use('/api/doctor-schedule', require('./routes/doctorSchedule'));
 app.use('/api/invoices',         require('./routes/invoices'));
 
+// Root endpoint
+app.get('/', (req, res) => {
+    res.json({ 
+        success: true, 
+        message: 'Ayursutra Backend API v1.0 🌿', 
+        status: 'running',
+        timestamp: new Date().toISOString(),
+        endpoints: {
+            health: '/health',
+            api: '/api/health',
+            auth: '/api/auth',
+            appointments: '/api/appointments',
+            therapies: '/api/therapies',
+            invoices: '/api/invoices'
+        }
+    });
+});
+
 // Health check (for Railway/monitoring services)
 app.get('/health', (req, res) => {
     res.json({ status: 'healthy', timestamp: new Date().toISOString() });
