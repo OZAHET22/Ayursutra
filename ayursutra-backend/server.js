@@ -121,7 +121,6 @@ app.use('/api/otp',       require('./routes/otp'));
 app.use('/api/catalogue', require('./routes/catalogue'));
 app.use('/api/blocks',           require('./routes/blocks'));
 app.use('/api/doctor-schedule', require('./routes/doctorSchedule'));
-app.use('/api/invoices',         require('./routes/invoices'));
 
 // Root endpoint
 app.get('/', (req, res) => {
@@ -135,8 +134,7 @@ app.get('/', (req, res) => {
             api: '/api/health',
             auth: '/api/auth',
             appointments: '/api/appointments',
-            therapies: '/api/therapies',
-            invoices: '/api/invoices'
+            therapies: '/api/therapies'
         }
     });
 });
@@ -320,69 +318,7 @@ const startCronScheduler = () => {
         }
     });
 
-    // ── INVOICE OVERDUE CRON: runs every hour ────────────────────────────────
-    const Invoice = require('./models/Invoice');
-    cron.schedule('0 * * * *', async () => {
-        try {
-            const now = new Date();
-            // Find invoices past due date, still in actionable statuses, overdue not yet set
-            const overdueInvoices = await Invoice.find({
-                dueDate: { $lt: now },
-                status: { $in: ['Sent', 'Unpaid', 'Partial'] },
-                overdueNotificationSent: { $ne: true },
-            });
-
-            for (const inv of overdueInvoices) {
-                inv.status = 'Overdue';
-                inv.overdueNotificationSent = true;
-                await inv.save();
-
-                // Emit socket event
-                io.to(`user_${inv.doctorId}`).emit('invoice_updated', {
-                    invoiceId: inv._id,
-                    invoiceNumber: inv.invoiceNumber,
-                    status: 'Overdue',
-                    patientId: inv.patientId,
-                    doctorId: inv.doctorId,
-                });
-
-                // Notify patient (registered only)
-                const mongoose = require('mongoose');
-                if (inv.isRegisteredPatient && mongoose.Types.ObjectId.isValid(inv.patientId)) {
-                    io.to(`user_${inv.patientId}`).emit('invoice_updated', {
-                        invoiceId: inv._id,
-                        invoiceNumber: inv.invoiceNumber,
-                        status: 'Overdue',
-                        patientId: inv.patientId,
-                        doctorId: inv.doctorId,
-                    });
-                    try {
-                        const { notifyPatient } = require('./utils/notifyPatient');
-                        await notifyPatient({
-                            io,
-                            patientId: inv.patientId,
-                            type: 'warning',
-                            title: `⚠️ Invoice Overdue: ${inv.invoiceNumber}`,
-                            message: `Your invoice ${inv.invoiceNumber} from Dr. ${inv.doctorName} is overdue. Balance due: ₹${inv.balance.toLocaleString('en-IN')}.`,
-                        });
-                    } catch (notifErr) {
-                        console.error('[Invoice Cron] Notify error:', notifErr.message);
-                    }
-                }
-
-                console.log(`[Invoice Cron] Marked overdue: ${inv.invoiceNumber}`);
-            }
-
-            if (overdueInvoices.length > 0) {
-                console.log(`[Invoice Cron] Processed ${overdueInvoices.length} overdue invoice(s)`);
-            }
-        } catch (err) {
-            console.error('[Invoice Cron] Error:', err.message);
-        }
-    });
-
     console.log('✅ Notification cron scheduler started (runs every minute)');
-    console.log('✅ Invoice overdue cron started (runs every hour)');
 };
 
 const PORT = process.env.PORT || 5000;
