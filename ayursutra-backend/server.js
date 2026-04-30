@@ -53,10 +53,11 @@ if (process.env.FRONTEND_URL) {
 const io = new Server(server, {
     cors: {
         origin: function (origin, callback) {
-            // allow requests with no origin (like mobile apps or curl)
             if (!origin) return callback(null, true);
-            if (allowedOrigins.indexOf(origin) !== -1) return callback(null, true);
-            return callback(new Error('CORS origin denied'), false);
+            if (allowedOrigins.indexOf(origin) !== -1 || origin.endsWith('.vercel.app')) {
+                return callback(null, true);
+            }
+            return callback(new Error('CORS origin denied'));
         },
         credentials: true,
     }
@@ -83,29 +84,20 @@ io.on('connection', (socket) => {
 // Middleware
 const corsOptions = {
     origin: function (origin, callback) {
+        console.log("Incoming Origin:", origin);
         if (!origin) return callback(null, true);
-        if (allowedOrigins.indexOf(origin) !== -1) return callback(null, true);
-        return callback(null, false);
+        
+        if (allowedOrigins.indexOf(origin) !== -1 || origin.endsWith('.vercel.app')) {
+            return callback(null, true);
+        }
+        
+        console.log("❌ Blocked by CORS:", origin);
+        return callback(new Error('Not allowed by CORS'));
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
 };
-
-// Ensure preflight and CORS headers are set even if routes error
-app.use((req, res, next) => {
-    const origin = req.headers.origin;
-    if (origin && allowedOrigins.indexOf(origin) !== -1) {
-        res.setHeader('Access-Control-Allow-Origin', origin);
-        res.setHeader('Access-Control-Allow-Credentials', 'true');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    }
-    if (req.method === 'OPTIONS') {
-        res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
-        return res.sendStatus(204);
-    }
-    next();
-});
 
 app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
@@ -405,13 +397,7 @@ server.listen(PORT, HOST, async () => {
     } catch (err) {
         console.error('⚠️ verifyTransporter failed:', err && err.message ? err.message : err);
     }
-    // Verify external WhatsApp connection on startup — catch errors
-    try {
-        const { verifyWhatsAppConnection } = require('./services/notificationService');
-        await verifyWhatsAppConnection();
-    } catch (err) {
-        console.error('⚠️ verifyWhatsAppConnection failed:', err && err.message ? err.message : err);
-    }
+
     // Start cron scheduler only after MongoDB is connected. If not connected,
     // wait for the 'connected' event and start the scheduler then.
     if (mongoose.connection && mongoose.connection.readyState === 1) {

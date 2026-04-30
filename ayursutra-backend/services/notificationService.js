@@ -146,9 +146,6 @@ const sendNotification = async (io, { userId, appointmentId, type, title, messag
     return results;
 };
 
-// No-op stub kept for backward compat (called from server.js on startup)
-const verifyWhatsAppConnection = async () => {
-    console.log('[WhatsApp] WhatsApp notifications disabled — not configured for this project.');
-};
 
-module.exports = { sendNotification, createInApp, sendEmail, verifyWhatsAppConnection, emitToUser, getTemplate, THERAPY_TEMPLATES };
+
+module.exports = { sendNotification, createInApp, sendEmail, emitToUser, getTemplate, THERAPY_TEMPLATES };

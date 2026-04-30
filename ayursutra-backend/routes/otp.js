@@ -7,8 +7,6 @@ const express = require('express');
 const router  = express.Router();
 const crypto  = require('crypto');
 const jwt     = require('jsonwebtoken');
-const axios   = require('axios');
-
 const OTP          = require('../models/OTP');
 const User         = require('../models/User');
 const AbuseLog     = require('../models/AbuseLog');
