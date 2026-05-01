@@ -122,24 +122,7 @@ app.use('/api/catalogue', require('./routes/catalogue'));
 app.use('/api/blocks',           require('./routes/blocks'));
 app.use('/api/doctor-schedule', require('./routes/doctorSchedule'));
 
-// Root endpoint
-app.get('/', (req, res) => {
-    res.json({ 
-        success: true, 
-        message: 'Ayursutra Backend API v1.0 🌿', 
-        status: 'running',
-        timestamp: new Date().toISOString(),
-        endpoints: {
-            health: '/health',
-            api: '/api/health',
-            auth: '/api/auth',
-            appointments: '/api/appointments',
-            therapies: '/api/therapies'
-        }
-    });
-});
-
-// Health check (for Railway/monitoring services)
+// Health check (for Railway/monitoring services) — must come BEFORE static serving
 app.get('/health', (req, res) => {
     res.json({ status: 'healthy', timestamp: new Date().toISOString() });
 });
@@ -149,7 +132,34 @@ app.get('/api/health', (req, res) => {
     res.json({ success: true, message: 'Ayursutra API is running 🌿', time: new Date(), socketio: true });
 });
 
-// 404 handler
+// ── Serve React Frontend (production) ─────────────────────────────────────────
+// The Vite build output lives at ../ayursutra-react/dist
+const clientBuildPath = path.join(__dirname, '..', 'ayursutra-react', 'dist');
+if (fs.existsSync(clientBuildPath)) {
+    console.log(`📦 Serving React frontend from: ${clientBuildPath}`);
+    app.use(express.static(clientBuildPath));
+
+    // SPA fallback: any route that is NOT /api/* and NOT a static file → serve index.html
+    // This lets React Router handle client-side routing (e.g. /patient-dashboard, /login)
+    app.get('*', (req, res, next) => {
+        // Skip API routes — let them fall through to the 404 handler below
+        if (req.path.startsWith('/api/')) return next();
+        res.sendFile(path.join(clientBuildPath, 'index.html'));
+    });
+} else {
+    // No frontend build found — show API info on root
+    app.get('/', (req, res) => {
+        res.json({
+            success: true,
+            message: 'Ayursutra Backend API v1.0 🌿',
+            status: 'running',
+            note: 'Frontend not built yet. Run: cd ayursutra-react && npm run build',
+            timestamp: new Date().toISOString(),
+        });
+    });
+}
+
+// 404 handler (only hits for unmatched /api/* routes)
 app.use((req, res) => {
     res.status(404).json({ success: false, message: `Route ${req.originalUrl} not found` });
 });

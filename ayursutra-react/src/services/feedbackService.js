@@ -3,7 +3,7 @@ import axios from 'axios';
 
 // Public: fetch aggregated rating + recent reviews for a specific doctor (no auth required)
 export const getDoctorPublicRating = async (doctorId) => {
-    const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+    const baseUrl = import.meta.env.VITE_API_URL || '';
     const res = await axios.get(`${baseUrl}/api/feedback/doctor/${doctorId}`);
     return res.data.data; // { doctor, rating, recentReviews }
 };
