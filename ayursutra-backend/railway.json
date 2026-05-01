@@ -6,21 +6,9 @@
   "deploy": {
     "startCommand": "node server.js",
     "restartPolicyType": "ON_FAILURE",
-    "restartPolicyMaxRetries": 5,
-    "healthchecks": {
-      "readiness": {
-        "initialDelaySeconds": 10,
-        "periodSeconds": 10,
-        "timeoutSeconds": 5,
-        "httpGet": {
-          "path": "/health",
-          "port": 5000
-        }
-      }
-    }
+    "restartPolicyMaxRetries": 5
   },
   "variables": {
-    "PORT": "5000",
     "NODE_ENV": "production",
     "MONGO_URI": {
       "description": "MongoDB Atlas connection string"
@@ -35,6 +23,12 @@
     "EMAIL_PASSWORD": {
       "description": "Gmail app-specific password"
     },
-    "FRONTEND_URL": "https://ayursutra.vercel.app"
+    "SMTP_USER": {
+      "description": "Same as EMAIL_USER"
+    },
+    "SMTP_PASS": {
+      "description": "Same as EMAIL_PASSWORD"
+    },
+    "FRONTEND_URL": "https://ayursutra-neon.vercel.app"
   }
 }

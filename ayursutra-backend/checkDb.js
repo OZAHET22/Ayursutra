@@ -1,4 +1,21 @@
-require('dotenv').config();
+// Load env vars manually (same approach as server.js)
+const fs = require('fs');
+const path = require('path');
+try {
+    const envPath = path.join(__dirname, '.env');
+    const envContent = fs.readFileSync(envPath, 'utf-8');
+    envContent.split('\n').forEach(line => {
+        const trimmed = line.replace(/\r/g, '').trim();
+        if (trimmed && !trimmed.startsWith('#')) {
+            const eqIndex = trimmed.indexOf('=');
+            if (eqIndex > 0) {
+                const key = trimmed.substring(0, eqIndex).trim();
+                let val = trimmed.substring(eqIndex + 1).trim().replace(/^['"]|['"]$/g, '');
+                if (!process.env[key]) process.env[key] = val;
+            }
+        }
+    });
+} catch (e) { /* .env not found */ }
 const mongoose = require('mongoose');
 mongoose.connect(process.env.MONGO_URI).then(async () => {
     const User = require('./models/User');
