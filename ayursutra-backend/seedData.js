@@ -1,4 +1,8 @@
-require('dotenv').config();
+try {
+    require('dotenv').config();
+} catch (e) {
+    // In production platforms, variables are supplied via host environment
+}
 process.env.MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/ayursutra';
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'ayursutra_jwt_secret_key_2024';
 const connectDB = require('./config/db');

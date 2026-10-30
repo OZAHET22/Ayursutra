@@ -1,4 +1,8 @@
-require('dotenv').config();
+try {
+    require('dotenv').config();
+} catch (e) {
+    // In production platforms (Render, Railway, etc.), variables are supplied via host environment
+}
 
 const http = require('http');
 const express = require('express');
