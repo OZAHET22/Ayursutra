@@ -25,8 +25,9 @@ const staticAllowedOrigins = [
     'http://localhost:5174',
     'http://localhost:5175',
     'http://localhost:3000',
-    'https://ayursutra-khaki.vercel.app',
+    'https://ayursutra-frontend-xi.vercel.app',
     'https://ayursutra-neon.vercel.app',
+    'https://ayursutra-khaki.vercel.app',
     'https://frontend.ayursutra.qd.je',
     'https://api.ayursutra.qd.je',
 ];
