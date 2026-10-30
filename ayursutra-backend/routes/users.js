@@ -171,9 +171,9 @@ router.post('/reassign-doctor', protect, async (req, res) => {
         ).select('-password');
 
         // ── 3. Real-time notifications ─────────────────────────────────────────
-        const io = req.app.get('io');
+        const pusher = req.app.get('pusher');
         const notifPayload = {
-            io,
+            pusher,
             patientId: req.user.id,
             type: 'general',
             title: '✅ Doctor Changed Successfully',
@@ -184,16 +184,16 @@ router.post('/reassign-doctor', protect, async (req, res) => {
         await notifyPatient(notifPayload);
 
         // Inform old doctor if exists
-        if (oldDoctorId && io && oldDoctorId.toString() !== newDoctorId) {
-            io.to(`user_${oldDoctorId}`).emit('patient_reassigned', {
+        if (oldDoctorId && pusher && oldDoctorId.toString() !== newDoctorId) {
+            pusher.trigger(`user_${oldDoctorId}`, 'patient_reassigned', {
                 patientName: patient.name,
                 newDoctorName: newDoctor.name,
                 cancelledAppointments: cancelledCount,
             });
         }
         // Inform new doctor
-        if (io) {
-            io.to(`user_${newDoctorId}`).emit('patient_assigned', {
+        if (pusher) {
+            pusher.trigger(`user_${newDoctorId}`, 'patient_assigned', {
                 patientName: patient.name,
                 patientId: req.user.id,
             });

@@ -53,7 +53,7 @@ router.post('/send', protect, async (req, res) => {
         const patient = await User.findById(patientId);
         if (!patient) return res.status(404).json({ success: false, message: 'Patient not found' });
 
-        const io = req.app.get('io');
+        const io = req.app.get('pusher');
         const selectedChannels = channels || ['in_app'];
         const results = [];
 

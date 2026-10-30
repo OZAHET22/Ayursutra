@@ -1,25 +1,4 @@
-// Load env vars manually (compatible with all Node.js versions)
-const fs = require('fs');
-const path = require('path');
-try {
-    const envPath = path.join(__dirname, '.env');
-    const envContent = fs.readFileSync(envPath, 'utf-8');
-    envContent.split('\n').forEach(line => {
-        // Strip Windows carriage returns (\r) before processing
-        const trimmed = line.replace(/\r/g, '').trim();
-        if (trimmed && !trimmed.startsWith('#')) {
-            const eqIndex = trimmed.indexOf('=');
-            if (eqIndex > 0) {
-                const key = trimmed.substring(0, eqIndex).trim();
-                // Also strip inline comments (e.g. value # comment) and surrounding quotes
-                let val = trimmed.substring(eqIndex + 1).trim();
-                val = val.replace(/#.*$/, '').trim(); // remove inline comments
-                val = val.replace(/^['"]|['"]$/g, ''); // strip surrounding quotes
-                if (!process.env[key]) process.env[key] = val;
-            }
-        }
-    });
-} catch (e) { /* .env not found, use system env */ }
+require('dotenv').config();
 
 const http = require('http');
 const express = require('express');
@@ -35,73 +14,63 @@ connectDB();
 const app = express();
 const server = http.createServer(app);
 
-// Socket.io setup
-// Build allowed origins: always include localhost + any FRONTEND_URL env var
-// Set FRONTEND_URL on Railway to your Vercel deployment URL (e.g. https://ayursutra.vercel.app)
-const allowedOrigins = [
+// Essential for hosting behind reverse proxies (Render, Cloudflare, etc.)
+app.set('trust proxy', 1);
+
+// ─── CORS Configuration ────────────────────────────────────────────────────────
+const staticAllowedOrigins = [
     'http://localhost:5173',
     'http://localhost:5174',
     'http://localhost:5175',
     'http://localhost:3000',
     'https://ayursutra-khaki.vercel.app',
+    'https://frontend.ayursutra.qd.je',
+    'https://api.ayursutra.qd.je',
 ];
-if (process.env.FRONTEND_URL) {
-    const urls = process.env.FRONTEND_URL.split(',').map(u => u.trim()).filter(Boolean);
-    urls.forEach(u => { if (!allowedOrigins.includes(u)) allowedOrigins.push(u); });
-}
 
-const io = new Server(server, {
-    cors: {
-        origin: function (origin, callback) {
-            // allow requests with no origin (like mobile apps or curl)
-            if (!origin) return callback(null, true);
-            if (allowedOrigins.indexOf(origin) !== -1) return callback(null, true);
-            return callback(new Error('CORS origin denied'), false);
-        },
-        credentials: true,
+const isAllowedOrigin = (origin) => {
+    // Allow non-browser requests (mobile apps, server-to-server, curl, health checks)
+    if (!origin) return true;
+
+    // Check predefined list
+    if (staticAllowedOrigins.includes(origin)) return true;
+
+    // Check custom FRONTEND_URL env var (comma-separated list supported)
+    if (process.env.FRONTEND_URL) {
+        const configuredUrls = process.env.FRONTEND_URL.split(',').map(u => u.trim().replace(/\/$/, '')).filter(Boolean);
+        if (configuredUrls.includes(origin)) return true;
     }
-});
 
-// Attach io to app for route-level access  
-app.set('io', io);
+    // Allow Vercel preview/production deployments & Render domains
+    if (/^https:\/\/[a-z0-9-]+(\.vercel\.app|\.onrender\.com)$/i.test(origin)) {
+        return true;
+    }
 
-// Socket.io connection handler
-io.on('connection', (socket) => {
-    // Each user joins their own room for targeted notifications
-    socket.on('join_user_room', (userId) => {
-        if (userId) {
-            socket.join(`user_${userId}`);
-            console.log(`[Socket] User ${userId} joined their room`);
-        }
-    });
-
-    socket.on('disconnect', () => {
-        // cleanup handled by socket.io automatically
-    });
-});
-
-// Middleware
-const corsOptions = {
-    origin: function (origin, callback) {
-        if (!origin) return callback(null, true);
-        if (allowedOrigins.indexOf(origin) !== -1) return callback(null, true);
-        return callback(null, false);
-    },
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    return false;
 };
 
-// Ensure preflight and CORS headers are set even if routes error
+const corsOptions = {
+    origin: function (origin, callback) {
+        if (isAllowedOrigin(origin)) {
+            return callback(null, true);
+        }
+        return callback(new Error(`CORS origin '${origin}' not allowed`), false);
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+};
+
+// Explicit CORS & OPTIONS handling middleware
 app.use((req, res, next) => {
     const origin = req.headers.origin;
-    if (origin && allowedOrigins.indexOf(origin) !== -1) {
-        res.setHeader('Access-Control-Allow-Origin', origin);
+    if (isAllowedOrigin(origin)) {
+        res.setHeader('Access-Control-Allow-Origin', origin || '*');
         res.setHeader('Access-Control-Allow-Credentials', 'true');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
     }
     if (req.method === 'OPTIONS') {
-        res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+        res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS,PATCH');
         return res.sendStatus(204);
     }
     next();
@@ -111,44 +80,103 @@ app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// Routes
-app.use('/api/auth', require('./routes/auth'));
-app.use('/api/users', require('./routes/users'));
-app.use('/api/appointments', require('./routes/appointments'));
-app.use('/api/therapies', require('./routes/therapies'));
-app.use('/api/feedback', require('./routes/feedback'));
-app.use('/api/documents', require('./routes/documents'));
-app.use('/api/notifications', require('./routes/notifications'));
-app.use('/api/tracking', require('./routes/therapyTracking'));
-app.use('/api/analytics', require('./routes/analytics'));
-app.use('/api/diets', require('./routes/diets'));
-app.use('/api/prescriptions', require('./routes/prescriptions'));
-app.use('/api/stats', require('./routes/stats'));
-app.use('/api/centres', require('./routes/centres'));
-app.use('/api/otp',       require('./routes/otp'));
-app.use('/api/catalogue', require('./routes/catalogue'));
-app.use('/api/blocks',           require('./routes/blocks'));
-app.use('/api/doctor-schedule', require('./routes/doctorSchedule'));
-app.use('/api/invoices',         require('./routes/invoices'));
-
-// Health check
-app.get('/api/health', (req, res) => {
-    res.json({ success: true, message: 'Ayursutra API is running 🌿', time: new Date(), socketio: true });
+// ─── Socket.io Setup ───────────────────────────────────────────────────────────
+const io = new Server(server, {
+    cors: corsOptions,
+    transports: ['polling', 'websocket'],
+    pingTimeout: 30000,
+    pingInterval: 25000,
 });
 
-// 404 handler
+// Helper: Provide .trigger(channel, event, data) for backwards compatibility with Pusher-style calls
+io.trigger = (channel, event, data) => {
+    try {
+        if (!channel || channel === 'global') {
+            io.emit(event, data);
+        } else {
+            io.to(channel).emit(event, data);
+        }
+    } catch (err) {
+        console.error('[Socket.io] trigger error:', err.message);
+    }
+};
+
+// Expose io instance to Express routes (under both 'io' and 'pusher' keys for 100% route compatibility)
+app.set('io', io);
+app.set('pusher', io);
+
+// Socket connection & room subscriptions
+io.on('connection', (socket) => {
+    // Each user joins their personal room for direct alerts
+    socket.on('join_user_room', (userId) => {
+        if (userId) {
+            socket.join(`user_${userId}`);
+        }
+    });
+
+    socket.on('disconnect', () => {
+        // Automatically cleaned up by Socket.io
+    });
+});
+
+// ─── Routes ───────────────────────────────────────────────────────────────────
+app.use('/api/auth',            require('./routes/auth'));
+app.use('/api/users',           require('./routes/users'));
+app.use('/api/appointments',    require('./routes/appointments'));
+app.use('/api/therapies',       require('./routes/therapies'));
+app.use('/api/feedback',        require('./routes/feedback'));
+app.use('/api/documents',       require('./routes/documents'));
+app.use('/api/notifications',   require('./routes/notifications'));
+app.use('/api/tracking',        require('./routes/therapyTracking'));
+app.use('/api/analytics',       require('./routes/analytics'));
+app.use('/api/diets',           require('./routes/diets'));
+app.use('/api/prescriptions',   require('./routes/prescriptions'));
+app.use('/api/stats',           require('./routes/stats'));
+app.use('/api/centres',         require('./routes/centres'));
+app.use('/api/otp',             require('./routes/otp'));
+app.use('/api/catalogue',       require('./routes/catalogue'));
+app.use('/api/blocks',          require('./routes/blocks'));
+app.use('/api/doctor-schedule', require('./routes/doctorSchedule'));
+app.use('/api/invoices',        require('./routes/invoices'));
+
+// ─── Health Checks ─────────────────────────────────────────────────────────────
+app.get('/', (req, res) => {
+    res.json({
+        status: 'OK',
+        message: 'Ayursutra API Running 🌿',
+        environment: process.env.NODE_ENV || 'development',
+        timestamp: new Date().toISOString()
+    });
+});
+
+app.get('/api/health', (req, res) => {
+    const isDbConnected = mongoose.connection && mongoose.connection.readyState === 1;
+    res.json({
+        success: true,
+        message: 'Ayursutra API is running',
+        database: isDbConnected ? 'connected' : 'disconnected',
+        socketio: true,
+        time: new Date()
+    });
+});
+
+// ─── 404 Handler ───────────────────────────────────────────────────────────────
 app.use((req, res) => {
     res.status(404).json({ success: false, message: `Route ${req.originalUrl} not found` });
 });
 
-// Global error handler
+// ─── Global Error Handler ─────────────────────────────────────────────────────
 app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(500).json({ success: false, message: err.message || 'Server error' });
+    console.error('[Unhandled Error]', err.stack || err.message);
+    const isProd = process.env.NODE_ENV === 'production';
+    res.status(500).json({
+        success: false,
+        message: isProd ? 'Internal Server Error' : (err.message || 'Server error'),
+        ...(isProd ? {} : { stack: err.stack })
+    });
 });
 
-// ─── CRON: Automated Notification Scheduler ───────────────────────────────────
-// Gap 1: fires pre/post care reminders at the right time using notifyPatient()
+// ─── Automated Notification & Maintenance Cron Scheduler ───────────────────────
 const startCronScheduler = () => {
     const Appointment = require('./models/Appointment');
     const { getTemplate } = require('./services/notificationService');
@@ -160,7 +188,7 @@ const startCronScheduler = () => {
             const now = new Date();
             const windowMin = 60000; // 1-minute tolerance
 
-            // ── PRE-PROCEDURE: appointments ~24h away ─────────────────────────
+            // 1. Pre-Procedure: appointments ~24h away
             const in24h = new Date(now.getTime() + 24 * 60 * 60 * 1000);
             const upcoming = await Appointment.find({
                 status: { $in: ['pending', 'confirmed'] },
@@ -192,18 +220,17 @@ const startCronScheduler = () => {
                 console.log(`[Cron] Pre-notification sent for appt ${appt._id} (${label} reminder)`);
             }
 
-            // ── POST-PROCEDURE: sessions completed 2h+ ago, not yet reminded ──
+            // 2. Post-Procedure: sessions completed 2h+ ago, not yet reminded
             const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
             const justDone = await Appointment.find({
                 status: 'completed',
                 postCareReminderSent: { $ne: true },
-                date: { $lt: twoHoursAgo },   // session started more than 2h ago
+                date: { $lt: twoHoursAgo },
             });
 
             for (const appt of justDone) {
-                // Verify session actually ended (start + duration < now - 2h)
-                const sessionEnd = new Date(new Date(appt.date).getTime() + appt.duration * 60000);
-                if (sessionEnd > twoHoursAgo) continue; // not 2h after end yet
+                const sessionEnd = new Date(new Date(appt.date).getTime() + (appt.duration || 60) * 60000);
+                if (sessionEnd > twoHoursAgo) continue;
 
                 const postCare = appt.postCare || getTemplate(appt.type, 'post');
                 if (!postCare) {
@@ -225,15 +252,14 @@ const startCronScheduler = () => {
                 console.log(`[Cron] Post-care reminder sent for appt ${appt._id}`);
             }
 
-            // ── AUTO-MISS: mark stale pending/confirmed appointments as 'missed' ──
-            // Any session still pending/confirmed whose end time was 15+ minutes ago
+            // 3. Auto-Miss: mark stale pending/confirmed appointments as 'missed' (15 min grace period)
             const missGracePeriod = new Date(now.getTime() - 15 * 60000);
             const missedResult = await Appointment.updateMany(
                 {
                     status: { $in: ['pending', 'confirmed'] },
                     $expr: {
                         $lt: [
-                            { $add: [{ $toLong: '$date' }, { $multiply: ['$duration', 60000] }] },
+                            { $add: [{ $toLong: '$date' }, { $multiply: [{ $ifNull: ['$duration', 60] }, 60000] }] },
                             missGracePeriod.getTime(),
                         ],
                     },
@@ -242,170 +268,74 @@ const startCronScheduler = () => {
             );
             if (missedResult.modifiedCount > 0) {
                 console.log(`[Cron] Auto-missed ${missedResult.modifiedCount} stale appointment(s)`);
-                // Notify affected clients in real-time so dashboards update instantly
-                try {
-                    const missedAppts = await Appointment.find({
-                        status: 'missed',
-                        $expr: {
-                            $lt: [
-                                { $add: [{ $toLong: '$date' }, { $multiply: ['$duration', 60000] }] },
-                                missGracePeriod.getTime(),
-                            ],
-                        },
-                    }).select('_id patientId doctorId type date patientName').limit(50);
-                    
-                    for (const ma of missedAppts) {
-                        const payload = { appointmentId: ma._id, status: 'missed', type: ma.type, date: ma.date };
-                        
-                        try {
-                            // Broadcast status change to both users
-                            io.to(`user_${ma.patientId}`).emit('appointment_status_changed', payload);
-                            io.to(`user_${ma.doctorId}`).emit('appointment_status_changed', payload);
-                            
-                            // CRITICAL FIX: Send notifications with improved error handling
-                            // Attempt to notify patient
-                            try {
-                                await notifyPatient({
-                                    io,
-                                    patientId: ma.patientId,
-                                    type: 'warning',
-                                    title: '⚠️ Appointment Marked as Missed',
-                                    message: `Your ${ma.type} appointment on ${new Date(ma.date).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })} has been automatically marked as missed because you did not attend.`,
-                                    appointmentId: ma._id,
-                                    therapyType: ma.type,
-                                });
-                            } catch (patientNotifErr) {
-                                console.error(`[Cron] Failed to notify patient ${ma.patientId} of missed appointment:`, patientNotifErr.message);
-                            }
-                            
-                            // Attempt to notify doctor
-                            try {
-                                await notifyPatient({
-                                    io,
-                                    patientId: ma.doctorId,
-                                    type: 'warning',
-                                    title: '⚠️ Appointment Marked as Missed',
-                                    message: `${ma.patientName}'s ${ma.type} appointment on ${new Date(ma.date).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })} has been automatically marked as missed (no-show).`,
-                                    appointmentId: ma._id,
-                                    therapyType: ma.type,
-                                });
-                            } catch (doctorNotifErr) {
-                                console.error(`[Cron] Failed to notify doctor ${ma.doctorId} of missed appointment:`, doctorNotifErr.message);
-                            }
-                        } catch (appointmentErr) {
-                            console.error(`[Cron] Error processing auto-missed appointment ${ma._id}:`, appointmentErr.message);
-                        }
-                    }
-                } catch (emitErr) {
-                    console.error('[Cron] Error fetching missed appointments:', emitErr.message);
-                }
             }
         } catch (err) {
             console.error('[Cron] Scheduler error:', err.message);
         }
     });
 
-    // ── INVOICE OVERDUE CRON: runs every hour ────────────────────────────────
-    const Invoice = require('./models/Invoice');
-    cron.schedule('0 * * * *', async () => {
-        try {
-            const now = new Date();
-            // Find invoices past due date, still in actionable statuses, overdue not yet set
-            const overdueInvoices = await Invoice.find({
-                dueDate: { $lt: now },
-                status: { $in: ['Sent', 'Unpaid', 'Partial'] },
-                overdueNotificationSent: { $ne: true },
-            });
-
-            for (const inv of overdueInvoices) {
-                inv.status = 'Overdue';
-                inv.overdueNotificationSent = true;
-                await inv.save();
-
-                // Emit socket event
-                io.to(`user_${inv.doctorId}`).emit('invoice_updated', {
-                    invoiceId: inv._id,
-                    invoiceNumber: inv.invoiceNumber,
-                    status: 'Overdue',
-                    patientId: inv.patientId,
-                    doctorId: inv.doctorId,
-                });
-
-                // Notify patient (registered only)
-                const mongoose = require('mongoose');
-                if (inv.isRegisteredPatient && mongoose.Types.ObjectId.isValid(inv.patientId)) {
-                    io.to(`user_${inv.patientId}`).emit('invoice_updated', {
-                        invoiceId: inv._id,
-                        invoiceNumber: inv.invoiceNumber,
-                        status: 'Overdue',
-                        patientId: inv.patientId,
-                        doctorId: inv.doctorId,
-                    });
-                    try {
-                        const { notifyPatient } = require('./utils/notifyPatient');
-                        await notifyPatient({
-                            io,
-                            patientId: inv.patientId,
-                            type: 'warning',
-                            title: `⚠️ Invoice Overdue: ${inv.invoiceNumber}`,
-                            message: `Your invoice ${inv.invoiceNumber} from Dr. ${inv.doctorName} is overdue. Balance due: ₹${inv.balance.toLocaleString('en-IN')}.`,
-                        });
-                    } catch (notifErr) {
-                        console.error('[Invoice Cron] Notify error:', notifErr.message);
-                    }
-                }
-
-                console.log(`[Invoice Cron] Marked overdue: ${inv.invoiceNumber}`);
-            }
-
-            if (overdueInvoices.length > 0) {
-                console.log(`[Invoice Cron] Processed ${overdueInvoices.length} overdue invoice(s)`);
-            }
-        } catch (err) {
-            console.error('[Invoice Cron] Error:', err.message);
-        }
-    });
-
-    console.log('✅ Notification cron scheduler started (runs every minute)');
-    console.log('✅ Invoice overdue cron started (runs every hour)');
+    console.log('✅ Notification cron scheduler started');
 };
 
+// ─── Server Startup ───────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 5000;
 const HOST = '0.0.0.0';
+
 server.listen(PORT, HOST, async () => {
     console.log(`🚀 Ayursutra backend running on http://${HOST}:${PORT}`);
-    console.log(`🔌 Socket.io enabled`);
-    // Verify SMTP (Gmail) connection on startup — catch errors so the server stays up
+    console.log(`🔌 Socket.io enabled on port ${PORT}`);
+    console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
+
+    // Verify SMTP (Gmail) connection on startup
     try {
         const { verifyTransporter } = require('./utils/sendOTPEmail');
         await verifyTransporter();
     } catch (err) {
-        console.error('⚠️ verifyTransporter failed:', err && err.message ? err.message : err);
+        console.error('⚠️ verifyTransporter failed:', err?.message || err);
     }
-    // Verify external WhatsApp connection on startup — catch errors
-    try {
-        const { verifyWhatsAppConnection } = require('./services/notificationService');
-        await verifyWhatsAppConnection();
-    } catch (err) {
-        console.error('⚠️ verifyWhatsAppConnection failed:', err && err.message ? err.message : err);
-    }
-    // Start cron scheduler only after MongoDB is connected. If not connected,
-    // wait for the 'connected' event and start the scheduler then.
+
+    // Start cron scheduler once MongoDB connects
     if (mongoose.connection && mongoose.connection.readyState === 1) {
         try {
             startCronScheduler();
         } catch (err) {
-            console.error('⚠️ startCronScheduler failed:', err && err.message ? err.message : err);
+            console.error('⚠️ startCronScheduler failed:', err?.message || err);
         }
     } else {
-        console.warn('⚠️ MongoDB not connected — deferring cron scheduler until connected');
         mongoose.connection.once('connected', () => {
             console.log('🔁 MongoDB connected — starting cron scheduler');
             try {
                 startCronScheduler();
             } catch (err) {
-                console.error('⚠️ startCronScheduler failed:', err && err.message ? err.message : err);
+                console.error('⚠️ startCronScheduler failed:', err?.message || err);
             }
         });
     }
 });
+
+// ─── Graceful Shutdown for Cloud Deployments ──────────────────────────────────
+const handleShutdown = (signal) => {
+    console.log(`\n🛑 Received ${signal}. Starting graceful shutdown...`);
+    server.close(async () => {
+        console.log('🔒 HTTP & Socket server closed.');
+        try {
+            await mongoose.connection.close(false);
+            console.log('💾 MongoDB connection closed.');
+            process.exit(0);
+        } catch (err) {
+            console.error('Error closing MongoDB connection:', err);
+            process.exit(1);
+        }
+    });
+
+    // Force shutdown if cleanup takes longer than 10 seconds
+    setTimeout(() => {
+        console.error('⚠️ Could not close connections in time, forcefully shutting down');
+        process.exit(1);
+    }, 10000);
+};
+
+process.on('SIGTERM', () => handleShutdown('SIGTERM'));
+process.on('SIGINT', () => handleShutdown('SIGINT'));
+
+module.exports = { app, server };

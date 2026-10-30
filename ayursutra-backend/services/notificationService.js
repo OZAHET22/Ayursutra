@@ -104,13 +104,27 @@ const createInApp = async (userId, appointmentId, type, title, message, therapyT
     }
 };
 
-// Emit socket event to a specific user room
-const emitToUser = (io, userId, event, data) => {
-    if (io) io.to(`user_${userId}`).emit(event, data);
+// Emit event to a specific user via Socket.io or Pusher
+const emitToUser = (dispatcher, userId, event, data) => {
+    if (!dispatcher) return;
+    try {
+        if (typeof dispatcher.to === 'function') {
+            dispatcher.to(`user_${userId}`).emit(event, data);
+        } else if (typeof dispatcher.trigger === 'function') {
+            const res = dispatcher.trigger(`user_${userId}`, event, data);
+            if (res && typeof res.catch === 'function') {
+                res.catch(err => {
+                    console.error('[Pusher] emit error:', err.message);
+                });
+            }
+        }
+    } catch (err) {
+        console.error('[emitToUser] error:', err.message);
+    }
 };
 
 // Build full notification (in-app + optional email)
-const sendNotification = async (io, { userId, appointmentId, type, title, message, therapyType, channels, email }) => {
+const sendNotification = async (pusher, { userId, appointmentId, type, title, message, therapyType, channels, email }) => {
     const results = {};
 
     // Always create in-app
@@ -118,7 +132,7 @@ const sendNotification = async (io, { userId, appointmentId, type, title, messag
         const notif = await createInApp(userId, appointmentId, type, title, message, therapyType);
         if (notif) {
             results.in_app = true;
-            emitToUser(io, userId.toString(), 'new_notification', {
+            emitToUser(pusher, userId.toString(), 'new_notification', {
                 _id: notif._id,
                 title,
                 message,

@@ -26,9 +26,9 @@ function recomputeTotals(invoice) {
     invoice.balance = parseFloat(Math.max(0, invoice.grandTotal - (invoice.paidAmount || 0)).toFixed(2));
 }
 
-/** Emit socket event to doctor and (if registered) patient */
-async function emitInvoiceEvent(io, invoice, event) {
-    if (!io) return;
+/** Emit real-time event to doctor and (if registered) patient */
+async function emitInvoiceEvent(dispatcher, invoice, event) {
+    if (!dispatcher) return;
     try {
         const payload = {
             invoiceId: invoice._id,
@@ -38,18 +38,26 @@ async function emitInvoiceEvent(io, invoice, event) {
             doctorId: invoice.doctorId,
         };
         // Always notify doctor
-        io.to(`user_${invoice.doctorId}`).emit(event, payload);
+        if (typeof dispatcher.to === 'function') {
+            dispatcher.to(`user_${invoice.doctorId}`).emit(event, payload);
+        } else if (typeof dispatcher.trigger === 'function') {
+            dispatcher.trigger(`user_${invoice.doctorId}`, event, payload);
+        }
         // Notify patient only if they are a registered user
         if (invoice.isRegisteredPatient && mongoose.Types.ObjectId.isValid(invoice.patientId)) {
-            io.to(`user_${invoice.patientId}`).emit(event, payload);
+            if (typeof dispatcher.to === 'function') {
+                dispatcher.to(`user_${invoice.patientId}`).emit(event, payload);
+            } else if (typeof dispatcher.trigger === 'function') {
+                dispatcher.trigger(`user_${invoice.patientId}`, event, payload);
+            }
         }
     } catch (e) {
-        console.error('[Invoice] Socket emit error:', e.message);
+        console.error('[Invoice] Real-time emit error:', e.message);
     }
 }
 
 /** Push an in-app notification to the patient (registered only) */
-async function notifyPatientInApp(io, invoice, title, message) {
+async function notifyPatientInApp(dispatcher, invoice, title, message) {
     if (!invoice.isRegisteredPatient || !mongoose.Types.ObjectId.isValid(invoice.patientId)) return;
     try {
         const Notification = require('../models/Notification');
@@ -59,15 +67,20 @@ async function notifyPatientInApp(io, invoice, title, message) {
             message,
             type: 'info',
         });
-        if (io) {
-            io.to(`user_${invoice.patientId}`).emit('new_notification', {
+        if (dispatcher) {
+            const notifPayload = {
                 _id: notif._id,
                 title: notif.title,
                 message: notif.message,
                 type: notif.type,
                 read: false,
                 createdAt: notif.createdAt,
-            });
+            };
+            if (typeof dispatcher.to === 'function') {
+                dispatcher.to(`user_${invoice.patientId}`).emit('new_notification', notifPayload);
+            } else if (typeof dispatcher.trigger === 'function') {
+                dispatcher.trigger(`user_${invoice.patientId}`, 'new_notification', notifPayload);
+            }
         }
     } catch (e) {
         console.error('[Invoice] Patient notify error:', e.message);
@@ -142,7 +155,7 @@ router.get('/:id', protect, async (req, res) => {
 // ─── POST /api/invoices ─────────────────────────────────────────────────────────
 router.post('/', protect, authorize('doctor', 'admin'), async (req, res) => {
     try {
-        const io = req.app.get('io');
+        const pusher = req.app.get('pusher');
         const body = req.body;
 
         // Check for duplicate invoice number
@@ -173,10 +186,10 @@ router.post('/', protect, authorize('doctor', 'admin'), async (req, res) => {
         recomputeTotals(invoice);
         await invoice.save();
 
-        // Emit socket + notify patient if status is Sent+
-        await emitInvoiceEvent(io, invoice, 'invoice_created');
+        // Emit Pusher + notify patient if status is Sent+
+        await emitInvoiceEvent(pusher, invoice, 'invoice_created');
         if (invoice.status === 'Sent') {
-            await notifyPatientInApp(io, invoice,
+            await notifyPatientInApp(pusher, invoice,
                 `New Invoice: ${invoice.invoiceNumber}`,
                 `Dr. ${invoice.doctorName} sent you a new invoice for ₹${invoice.grandTotal.toLocaleString('en-IN')}.`
             );
@@ -192,7 +205,7 @@ router.post('/', protect, authorize('doctor', 'admin'), async (req, res) => {
 // ─── PUT /api/invoices/:id ──────────────────────────────────────────────────────
 router.put('/:id', protect, authorize('doctor', 'admin'), async (req, res) => {
     try {
-        const io = req.app.get('io');
+        const pusher = req.app.get('pusher');
         const invoice = await Invoice.findById(req.params.id);
         if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found' });
 
@@ -233,7 +246,7 @@ router.put('/:id', protect, authorize('doctor', 'admin'), async (req, res) => {
         await invoice.save();
 
         // Emit update event
-        await emitInvoiceEvent(io, invoice, 'invoice_updated');
+        await emitInvoiceEvent(pusher, invoice, 'invoice_updated');
 
         // Status-change notifications
         if (prevStatus !== invoice.status) {
@@ -250,7 +263,7 @@ router.put('/:id', protect, authorize('doctor', 'admin'), async (req, res) => {
                 msg = `Your invoice is overdue. Balance due: ₹${invoice.balance.toLocaleString('en-IN')}.`;
             }
             if (invoice.status !== 'Draft') {
-                await notifyPatientInApp(io, invoice, title, msg);
+                await notifyPatientInApp(pusher, invoice, title, msg);
             }
         }
 
@@ -264,7 +277,7 @@ router.put('/:id', protect, authorize('doctor', 'admin'), async (req, res) => {
 // ─── DELETE /api/invoices/:id ───────────────────────────────────────────────────
 router.delete('/:id', protect, authorize('doctor', 'admin'), async (req, res) => {
     try {
-        const io = req.app.get('io');
+        const pusher = req.app.get('pusher');
         const invoice = await Invoice.findById(req.params.id);
         if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found' });
 
@@ -276,7 +289,7 @@ router.delete('/:id', protect, authorize('doctor', 'admin'), async (req, res) =>
         }
 
         await invoice.deleteOne();
-        await emitInvoiceEvent(io, invoice, 'invoice_deleted');
+        await emitInvoiceEvent(pusher, invoice, 'invoice_deleted');
         res.json({ success: true, message: 'Invoice deleted' });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });

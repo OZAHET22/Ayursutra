@@ -304,9 +304,9 @@ router.post('/', protect, async (req, res) => {
         const appointmentData = await Appointment.create(body);
 
         // Real-time: notify doctor room + broadcast global slots_updated
-        const io = req.app.get('io');
+        const io = req.app.get('pusher');
         if (io && appointmentData.doctorId) {
-            io.to(`user_${appointmentData.doctorId}`).emit('appointment_booked', {
+            io.trigger(`user_${appointmentData.doctorId}`, 'appointment_booked', {
                 appointmentId: appointmentData._id,
                 patientName:   appointmentData.patientName,
                 type:          appointmentData.type,
@@ -314,7 +314,7 @@ router.post('/', protect, async (req, res) => {
                 duration:      appointmentData.duration,
             });
             // All open slot pickers (doctor & patient) refresh automatically
-            io.emit('slots_updated', {
+            io.trigger('global', 'slots_updated', {
                 doctorId: appointmentData.doctorId.toString(),
                 date:     appointmentData.date,
             });
@@ -324,7 +324,7 @@ router.post('/', protect, async (req, res) => {
         let notifResult = {};
         if (appointmentData.patientId) {
             notifResult = await notifyPatient({
-                io,
+                pusher: io,
                 patientId:    appointmentData.patientId,
                 type:         'general',
                 title:        `Appointment Scheduled: ${appointmentData.type}`,
@@ -423,9 +423,9 @@ router.put('/:id', protect, async (req, res) => {
         const appt = await Appointment.findByIdAndUpdate(req.params.id, update, { new: true });
 
         // Broadcast slot refresh
-        const io = req.app.get('io');
+        const io = req.app.get('pusher');
         if (io && appt.doctorId) {
-            io.emit('slots_updated', {
+            io.trigger('global', 'slots_updated', {
                 doctorId: appt.doctorId.toString(),
                 date:     appt.date,
             });
@@ -437,7 +437,7 @@ router.put('/:id', protect, async (req, res) => {
 
         if (req.body.date) {
             notifResult = await notifyPatient({
-                io,
+                pusher: io,
                 patientId:    notifyUserId,
                 type:         'general',
                 title:        'Appointment Rescheduled',
@@ -448,7 +448,7 @@ router.put('/:id', protect, async (req, res) => {
         }
         if (req.body.status) {
             notifResult = await notifyPatient({
-                io,
+                pusher: io,
                 patientId:    notifyUserId,
                 type:         'general',
                 title:        `Appointment ${req.body.status.charAt(0).toUpperCase() + req.body.status.slice(1)}`,
@@ -503,8 +503,8 @@ router.post('/:id/symptom-log', protect, async (req, res) => {
             { new: true }
         );
         if (!appt) return res.status(404).json({ success: false, message: 'Not found' });
-        const io = req.app.get('io');
-        if (io) io.to(`user_${appt.doctorId}`).emit('symptom_logged', { patientName: appt.patientName, severity: severity.toLowerCase(), symptoms, appointmentId: appt._id });
+        const io = req.app.get('pusher');
+        if (io) io.trigger(`user_${appt.doctorId}`, 'symptom_logged', { patientName: appt.patientName, severity: severity.toLowerCase(), symptoms, appointmentId: appt._id });
         res.json({ success: true, data: appt });
     } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
@@ -577,11 +577,11 @@ router.delete('/bulk/delete', protect, async (req, res) => {
         
         // ── Emit socket notification to affected doctors ──
         const cancelledAppts = await Appointment.find({ ...filter, status: 'cancelled' }).select('doctorId').limit(50);
-        const io = req.app.get('io');
+        const io = req.app.get('pusher');
         if (io && cancelledAppts.length > 0) {
             const doctorIds = [...new Set(cancelledAppts.map(a => a.doctorId.toString()))];
             doctorIds.forEach(doctorId => {
-                io.to(`user_${doctorId}`).emit('slots_updated', { doctorId });
+                io.trigger(`user_${doctorId}`, 'slots_updated', { doctorId });
             });
         }
 
@@ -607,9 +607,9 @@ router.delete('/:id', protect, async (req, res) => {
         if (!appt) return res.status(404).json({ success: false, message: 'Not found' });
 
         // Broadcast so slot grids update immediately after cancellation
-        const io = req.app.get('io');
+        const io = req.app.get('pusher');
         if (io && appt.doctorId) {
-            io.emit('slots_updated', {
+            io.trigger('global', 'slots_updated', {
                 doctorId: appt.doctorId.toString(),
                 date:     appt.date,
             });

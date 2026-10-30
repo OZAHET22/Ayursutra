@@ -1,4 +1,4 @@
-// Set env vars directly (no dotenv dependency needed)
+require('dotenv').config();
 process.env.MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/ayursutra';
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'ayursutra_jwt_secret_key_2024';
 const connectDB = require('./config/db');
@@ -7,6 +7,7 @@ const Appointment = require('./models/Appointment');
 const Therapy = require('./models/Therapy');
 const Feedback = require('./models/Feedback');
 const Centre = require('./models/Centre');
+const CatalogueItem = require('./models/CatalogueItem');
 
 const seed = async () => {
     await connectDB();
@@ -17,6 +18,7 @@ const seed = async () => {
     await Therapy.deleteMany({});
     await Feedback.deleteMany({});
     await Centre.deleteMany({});
+    await CatalogueItem.deleteMany({});
 
     console.log('🧹 Cleared existing data');
 
@@ -48,76 +50,127 @@ const seed = async () => {
         experience: '8 years', phone: '9876500002', avatar: '👩‍⚕️', available: true, approved: true,
     });
 
-    const doctor3 = await User.create({
-        name: 'Dr. Amit Patel', email: 'doctor3@demo.com', password: 'demo123',
-        role: 'doctor', speciality: 'Detox Specialist',
-        centre: 'Ahmadabad Healing Centre', centreId: 'ahmadabad',
-        experience: '10 years', phone: '9876500003', avatar: '👨‍⚕️', available: true, approved: true,
-    });
-
     const patient1 = await User.create({
-        name: 'Priya Sharma', email: 'patient@demo.com', password: 'demo123',
-        role: 'patient', age: 35, gender: 'Female',
-        phone: '9876543210', address: 'Mehsana',
+        name: 'Aarav Patel', email: 'patient@demo.com', password: 'demo123',
+        role: 'patient', phone: '9876500003', avatar: '🧘',
         centre: 'Mehsana Healing Centre', centreId: 'mehsana',
-        condition: 'Stress & Insomnia',
-        dosha: { vata: 60, pitta: 25, kapha: 15 }, avatar: '🏥',
+        medicalHistory: 'Chronic back pain, Vata imbalance',
+        emergencyContact: { name: 'Sunita Patel', relationship: 'Mother', phone: '9876500099' },
     });
 
     const patient2 = await User.create({
-        name: 'Rahul Verma', email: 'patient2@demo.com', password: 'demo123',
-        role: 'patient', age: 42, gender: 'Male',
-        phone: '9876543211', address: 'Mehsana',
+        name: 'Diya Shah', email: 'patient2@demo.com', password: 'demo123',
+        role: 'patient', phone: '9876500004', avatar: '🌸',
         centre: 'Mehsana Healing Centre', centreId: 'mehsana',
-        condition: 'Joint Pain',
-        dosha: { vata: 30, pitta: 40, kapha: 30 }, avatar: '🏥',
+        medicalHistory: 'Insomnia, Pitta aggravation',
+        emergencyContact: { name: 'Kiran Shah', relationship: 'Father', phone: '9876500098' },
     });
 
-    const patient3 = await User.create({
-        name: 'Sita Patel', email: 'patient3@demo.com', password: 'demo123',
-        role: 'patient', age: 28, gender: 'Female',
-        phone: '9876543212', address: 'Ahmadabad',
-        centre: 'Ahmadabad Healing Centre', centreId: 'ahmadabad',
-        condition: 'Digestive Issues',
-        dosha: { vata: 20, pitta: 60, kapha: 20 }, avatar: '🏥',
-    });
+    console.log('👤 Users seeded');
 
-    console.log('👥 Users created');
+    // Seed Catalogue Items
+    await CatalogueItem.insertMany([
+        { doctorId: doctor1._id, type: 'Therapy', name: 'Abhyanga', desc: 'Full body warm herbal oil massage', price: 1500, gst: 18 },
+        { doctorId: doctor1._id, type: 'Therapy', name: 'Shirodhara', desc: 'Pouring medicated oil on forehead', price: 2000, gst: 18 },
+        { doctorId: doctor1._id, type: 'Consultation', name: 'Initial Ayurvedic Consultation', desc: 'Complete Nadi and Dosha evaluation', price: 500, gst: 0 },
+        { doctorId: doctor2._id, type: 'Therapy', name: 'Swedana', desc: 'Herbal steam therapy', price: 1000, gst: 18 },
+    ]);
+    console.log('📦 Catalogue Items seeded');
 
-    // Create appointments
-    const now = new Date();
+    // Seed Patient Therapies
+    const today = new Date();
+    const endDate1 = new Date(today);
+    endDate1.setDate(endDate1.getDate() + 14);
+
+    const therapies = await Therapy.insertMany([
+        {
+            name: 'Abhyanga Full Body Course',
+            patientId: patient1._id,
+            patientName: patient1.name,
+            doctorId: doctor1._id,
+            doctorName: doctor1.name,
+            description: 'Course of warm herbal oil massages for Vata calming.',
+            type: 'Abhyanga',
+            status: 'active',
+            sessions: 5,
+            completed: 2,
+            progress: 40,
+            startDate: today,
+            endDate: endDate1,
+        },
+        {
+            name: 'Shirodhara Rejuvenation',
+            patientId: patient2._id,
+            patientName: patient2.name,
+            doctorId: doctor2._id,
+            doctorName: doctor2.name,
+            description: 'Medicated oil therapy for stress and sleep.',
+            type: 'Shirodhara',
+            status: 'upcoming',
+            sessions: 3,
+            completed: 0,
+            progress: 0,
+            startDate: today,
+            endDate: endDate1,
+        },
+    ]);
+    console.log('🌿 Therapies seeded');
+
+    // Seed appointments
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const dayAfter = new Date(today);
+    dayAfter.setDate(dayAfter.getDate() + 2);
+
     await Appointment.insertMany([
-        { patientId: patient1._id, patientName: 'Priya Sharma', doctorId: doctor1._id, doctorName: 'Dr. Rajesh Sharma', type: 'Panchakarma', date: new Date(now.getTime() + 4 * 24 * 60 * 60 * 1000), duration: 60, status: 'confirmed', centre: 'pune' },
-        { patientId: patient1._id, patientName: 'Priya Sharma', doctorId: doctor1._id, doctorName: 'Dr. Rajesh Sharma', type: 'Abhyanga', date: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000), duration: 45, status: 'pending', centre: 'pune' },
-        { patientId: patient2._id, patientName: 'Rahul Verma', doctorId: doctor1._id, doctorName: 'Dr. Rajesh Sharma', type: 'Consultation', date: new Date(now.getTime() + 5 * 24 * 60 * 60 * 1000), duration: 30, status: 'pending', centre: 'pune' },
-        { patientId: patient2._id, patientName: 'Rahul Verma', doctorId: doctor1._id, doctorName: 'Dr. Rajesh Sharma', type: 'Basti', date: new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000), duration: 90, status: 'completed', centre: 'pune' },
-        { patientId: patient3._id, patientName: 'Sita Patel', doctorId: doctor2._id, doctorName: 'Dr. Priya Gupta', type: 'Shirodhara', date: new Date(now.getTime() + 10 * 24 * 60 * 60 * 1000), duration: 60, status: 'confirmed', centre: 'pune' },
+        {
+            patientId: patient1._id,
+            patientName: patient1.name,
+            doctorId: doctor1._id,
+            doctorName: doctor1.name,
+            type: 'Abhyanga',
+            date: tomorrow,
+            duration: 60,
+            status: 'confirmed',
+            centre: 'Mehsana Healing Centre',
+            notes: 'Follow-up session for back pain',
+        },
+        {
+            patientId: patient2._id,
+            patientName: patient2.name,
+            doctorId: doctor2._id,
+            doctorName: doctor2.name,
+            type: 'Shirodhara',
+            date: dayAfter,
+            duration: 45,
+            status: 'pending',
+            centre: 'Mehsana Healing Centre',
+            notes: 'First Shirodhara consultation',
+        },
     ]);
-    console.log('📅 Appointments created');
+    console.log('📅 Appointments seeded');
 
-    // Create therapies
-    await Therapy.insertMany([
-        { name: 'Panchakarma Detox', patientId: patient1._id, patientName: 'Priya Sharma', doctorId: doctor1._id, doctorName: 'Dr. Rajesh Sharma', description: 'Complete detox therapy', type: 'panchakarma', status: 'active', sessions: 12, completed: 8, progress: 66, startDate: new Date('2026-01-01'), endDate: new Date('2026-04-15'), centre: 'pune' },
-        { name: 'Stress Management', patientId: patient1._id, patientName: 'Priya Sharma', doctorId: doctor1._id, doctorName: 'Dr. Rajesh Sharma', description: 'Shirodhara based stress relief', type: 'shirodhara', status: 'upcoming', sessions: 8, completed: 0, progress: 0, startDate: new Date('2026-04-01'), endDate: new Date('2026-04-30'), centre: 'pune' },
-        { name: 'Joint Pain Relief', patientId: patient2._id, patientName: 'Rahul Verma', doctorId: doctor1._id, doctorName: 'Dr. Rajesh Sharma', description: 'Basti therapy for joint pain', type: 'basti', status: 'active', sessions: 10, completed: 3, progress: 30, startDate: new Date('2026-02-01'), endDate: new Date('2026-05-01'), centre: 'pune' },
-    ]);
-    console.log('💆 Therapies created');
+    // Seed feedback
+    await Feedback.create({
+        patientId: patient1._id,
+        patientName: patient1.name,
+        doctorId: doctor1._id,
+        content: 'Excellent Abhyanga therapy! Dr. Rajesh was very attentive, professional, and skilled.',
+        rating: 5,
+        replied: false,
+    });
+    console.log('⭐ Feedback seeded');
 
-    // Create feedback
-    await Feedback.insertMany([
-        { patientId: patient1._id, patientName: 'Priya Sharma', doctorId: doctor1._id, content: 'Feeling much more relaxed after the Shirodhara session. Sleep improved!', rating: 5, replied: true, reply: 'Thank you! Continue the diet plan.' },
-        { patientId: patient2._id, patientName: 'Rahul Verma', doctorId: doctor1._id, content: 'Noticed improvement in digestion. Following diet recommendations.', rating: 4, replied: true, reply: 'Great progress Rahul!' },
-        { patientId: patient3._id, patientName: 'Sita Patel', doctorId: doctor2._id, content: 'Basti treatment was effective. Feeling lighter.', rating: 3, replied: false, reply: '' },
-    ]);
-    console.log('💬 Feedback created');
-
-    console.log('\n✅ Database seeded successfully!\n');
-    console.log('Demo login credentials:');
-    console.log('  Patient: patient@demo.com / demo123');
-    console.log('  Doctor:  doctor@demo.com / demo123');
-    console.log('  Admin:   admin@demo.com / demo123');
-
+    console.log('\n✅ Demo data seeded successfully into MongoDB Atlas!');
+    console.log('------------------------------------------------');
+    console.log('Admin:   admin@demo.com   / demo123');
+    console.log('Doctor:  doctor@demo.com  / demo123');
+    console.log('Patient: patient@demo.com / demo123');
+    console.log('------------------------------------------------');
     process.exit(0);
 };
 
-seed().catch(err => { console.error(err); process.exit(1); });
+seed().catch((err) => {
+    console.error('❌ Seeding error:', err);
+    process.exit(1);
+});
