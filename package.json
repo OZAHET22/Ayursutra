@@ -7,8 +7,9 @@
     "dev": "concurrently -n \"BACKEND,FRONTEND\" -c \"blue,green\" \"npm run dev:backend\" \"npm run dev:frontend\"",
     "dev:backend": "cd ayursutra-backend && npm run dev",
     "dev:frontend": "cd ayursutra-react && npm run dev",
+    "build": "cd ayursutra-backend && npm install",
+    "build:frontend": "cd ayursutra-react && npm install && npm run build",
     "start": "cd ayursutra-backend && node server.js",
-    "build": "cd ayursutra-react && npm run build",
     "install:all": "cd ayursutra-backend && npm install && cd ../ayursutra-react && npm install",
     "seed": "cd ayursutra-backend && node seedData.js"
   },
