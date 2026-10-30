@@ -1,15 +1,19 @@
 {
-  "name": "ayursutra-root",
+  "name": "ayursutra",
   "version": "1.0.0",
   "private": true,
+  "description": "Ayursutra Wellness Platform — Full Stack",
   "scripts": {
     "dev": "concurrently -n \"BACKEND,FRONTEND\" -c \"blue,green\" \"npm run dev:backend\" \"npm run dev:frontend\"",
     "dev:backend": "cd ayursutra-backend && npm run dev",
     "dev:frontend": "cd ayursutra-react && npm run dev",
-    "start": "concurrently -n \"BACKEND,FRONTEND\" -c \"blue,green\" \"npm run start:backend\" \"npm run dev:frontend\"",
-    "start:backend": "cd ayursutra-backend && npm start",
+    "start": "cd ayursutra-backend && node server.js",
     "build": "cd ayursutra-react && npm run build",
+    "install:all": "cd ayursutra-backend && npm install && cd ../ayursutra-react && npm install",
     "seed": "cd ayursutra-backend && node seedData.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   },
   "dependencies": {
     "firebase": "^12.12.0",

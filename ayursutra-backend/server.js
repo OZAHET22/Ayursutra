@@ -6,6 +6,8 @@ const cors = require('cors');
 const { Server } = require('socket.io');
 const cron = require('node-cron');
 const mongoose = require('mongoose');
+const path = require('path');
+const fs = require('fs');
 const connectDB = require('./config/db');
 
 // Connect to MongoDB
@@ -24,6 +26,7 @@ const staticAllowedOrigins = [
     'http://localhost:5175',
     'http://localhost:3000',
     'https://ayursutra-khaki.vercel.app',
+    'https://ayursutra-neon.vercel.app',
     'https://frontend.ayursutra.qd.je',
     'https://api.ayursutra.qd.je',
 ];
@@ -107,7 +110,6 @@ app.set('pusher', io);
 
 // Socket connection & room subscriptions
 io.on('connection', (socket) => {
-    // Each user joins their personal room for direct alerts
     socket.on('join_user_room', (userId) => {
         if (userId) {
             socket.join(`user_${userId}`);
@@ -140,25 +142,41 @@ app.use('/api/doctor-schedule', require('./routes/doctorSchedule'));
 app.use('/api/invoices',        require('./routes/invoices'));
 
 // ─── Health Checks ─────────────────────────────────────────────────────────────
-app.get('/', (req, res) => {
-    res.json({
-        status: 'OK',
-        message: 'Ayursutra API Running 🌿',
-        environment: process.env.NODE_ENV || 'development',
-        timestamp: new Date().toISOString()
-    });
+app.get('/health', (req, res) => {
+    res.json({ status: 'healthy', timestamp: new Date().toISOString() });
 });
 
 app.get('/api/health', (req, res) => {
     const isDbConnected = mongoose.connection && mongoose.connection.readyState === 1;
     res.json({
         success: true,
-        message: 'Ayursutra API is running',
+        message: 'Ayursutra API is running 🌿',
         database: isDbConnected ? 'connected' : 'disconnected',
         socketio: true,
         time: new Date()
     });
 });
+
+// ─── Serve Static Frontend if Built ───────────────────────────────────────────
+const clientBuildPath = path.join(__dirname, '..', 'ayursutra-react', 'dist');
+if (fs.existsSync(clientBuildPath)) {
+    console.log(`📦 Serving React frontend from: ${clientBuildPath}`);
+    app.use(express.static(clientBuildPath));
+
+    app.get('*', (req, res, next) => {
+        if (req.path.startsWith('/api/') || req.path === '/health') return next();
+        res.sendFile(path.join(clientBuildPath, 'index.html'));
+    });
+} else {
+    app.get('/', (req, res) => {
+        res.json({
+            status: 'OK',
+            message: 'Ayursutra API Running 🌿',
+            environment: process.env.NODE_ENV || 'development',
+            timestamp: new Date().toISOString()
+        });
+    });
+}
 
 // ─── 404 Handler ───────────────────────────────────────────────────────────────
 app.use((req, res) => {
@@ -186,7 +204,7 @@ const startCronScheduler = () => {
     cron.schedule('* * * * *', async () => {
         try {
             const now = new Date();
-            const windowMin = 60000; // 1-minute tolerance
+            const windowMin = 60000;
 
             // 1. Pre-Procedure: appointments ~24h away
             const in24h = new Date(now.getTime() + 24 * 60 * 60 * 1000);
@@ -220,7 +238,7 @@ const startCronScheduler = () => {
                 console.log(`[Cron] Pre-notification sent for appt ${appt._id} (${label} reminder)`);
             }
 
-            // 2. Post-Procedure: sessions completed 2h+ ago, not yet reminded
+            // 2. Post-Procedure: sessions completed 2h+ ago
             const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
             const justDone = await Appointment.find({
                 status: 'completed',
@@ -252,7 +270,7 @@ const startCronScheduler = () => {
                 console.log(`[Cron] Post-care reminder sent for appt ${appt._id}`);
             }
 
-            // 3. Auto-Miss: mark stale pending/confirmed appointments as 'missed' (15 min grace period)
+            // 3. Auto-Miss: mark stale pending/confirmed appointments as 'missed'
             const missGracePeriod = new Date(now.getTime() - 15 * 60000);
             const missedResult = await Appointment.updateMany(
                 {
@@ -286,7 +304,6 @@ server.listen(PORT, HOST, async () => {
     console.log(`🔌 Socket.io enabled on port ${PORT}`);
     console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
 
-    // Verify SMTP (Gmail) connection on startup
     try {
         const { verifyTransporter } = require('./utils/sendOTPEmail');
         await verifyTransporter();
@@ -294,7 +311,6 @@ server.listen(PORT, HOST, async () => {
         console.error('⚠️ verifyTransporter failed:', err?.message || err);
     }
 
-    // Start cron scheduler once MongoDB connects
     if (mongoose.connection && mongoose.connection.readyState === 1) {
         try {
             startCronScheduler();
@@ -328,9 +344,8 @@ const handleShutdown = (signal) => {
         }
     });
 
-    // Force shutdown if cleanup takes longer than 10 seconds
     setTimeout(() => {
-        console.error('⚠️ Could not close connections in time, forcefully shutting down');
+        console.error('⚠️ Forcefully shutting down');
         process.exit(1);
     }, 10000);
 };

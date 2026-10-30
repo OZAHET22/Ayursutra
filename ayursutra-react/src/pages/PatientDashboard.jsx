@@ -38,7 +38,7 @@ export default function PatientDashboard({ user: initialUser, onLogout, showNoti
     useEffect(() => { setUser(initialUser); }, [initialUser]);
 
     useEffect(() => {
-        const socketUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+        const socketUrl = import.meta.env.VITE_API_URL || window.location.origin;
         // IMPORTANT: 'polling' MUST come first — WebSocket-first causes
         // "closed before connection established" errors when the server is local.
         const socket = io(socketUrl, {

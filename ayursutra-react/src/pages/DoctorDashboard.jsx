@@ -40,7 +40,7 @@ export default function DoctorDashboard({ user, onLogout, showNotification, noti
     const menuRef = useRef(null);
 
     useEffect(() => {
-        const socketUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+        const socketUrl = import.meta.env.VITE_API_URL || window.location.origin;
         // IMPORTANT: 'polling' MUST come first so Socket.io completes the HTTP
         // handshake before upgrading to WebSocket. Reversing this order causes
         // "WebSocket closed before connection established" errors.
